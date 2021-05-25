@@ -1,13 +1,17 @@
 from osgeo import gdal
 from osgeo import ogr
 from osgeo import osr
+from osgeo import gdalconst
+import os
 
 # inputs
-base_raster = sys.argv[1]
-line_file = sys.argv[2]
+base_path = '/mnt/sverdrup-2/sat_auxdata/MOIRA/data/ridges_manual/ESS/20210419'
+
+base_raster = '/mnt/sverdrup-2/sat_auxdata/MOIRA/ridge_case_18042021/s1_geotiff/ups_HH_S1A_EW_GRDM_1SDH_20210419T214554_20210419T214654_037525_046CC1_F83C.tiff'
+line_file = '%s/20210419.shp' % base_path
 
 # ouput
-output_file = sys.argv[3]
+output_file = '%s/%s.tif' % (base_path, os.path.basename(line_file).split('.')[0])
 
 # processing
 raster_ds = gdal.Open(base_raster, 0)
@@ -46,11 +50,10 @@ for feature in line_layer:
 
 del line_layer_reprojected
 
-rasterized = gdal.Rasterize('MEM', 'temp.shp', format='MEM',
-                   outputBounds=[x_min, y_min, x_max, y_max],
-                   xRes=x_res, yRes=y_res, burnValues=[1])
+#outputBounds=[x_min, y_min, x_max, y_max],
+rasterized = gdal.Rasterize('MEM', 'temp.shp', format='MEM', outputBounds=[x_min, y_min, x_max, y_max], xRes=x_res, yRes=y_res, burnValues=[1])
 
-rasterized_projected = gdal.Warp(output_file, rasterized, format='GTiff', dstSRS=projection)
+rasterized_projected = gdal.Warp(output_file,rasterized, format='GTiff', dstSRS=projection)
 
 del rasterized
 del rasterized_projected
