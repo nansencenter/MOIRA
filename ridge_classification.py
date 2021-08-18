@@ -306,63 +306,6 @@ class SarImage:
     def func(self, name):
         return getattr(self, name)
 
-    def exportNetCDF4(self, out_path='.'):
-        '''
-        Make NetCDF4 file
-
-        '''
-
-        # Check if lat lon parameters are exist
-        if hasattr(self, 'lats'):
-            pass
-        else:
-            print('\nGetting lats lons...\n')
-            self.getLatsLons()
-
-        out_fname = '%s/%s.nc' % (out_path, os.path.basename(self.name).split('.')[0])
-        try:
-            os.remove(out_fname)
-        except OSError:
-            pass
-
-        ds = Dataset(out_fname, 'w', format='NETCDF4_CLASSIC')
-
-        # Dimensions
-        y_dim = ds.createDimension('y', self.lons.shape[0])
-        x_dim = ds.createDimension('x', self.lons.shape[1])
-        time_dim = ds.createDimension('time', None)
-        # data_dim = ds.createDimension('data', len([k for k in data.keys()]))
-
-        # Variables
-        times = ds.createVariable('time', np.float64, ('time',))
-        latitudes = ds.createVariable('lat', np.float32, ('y', 'x',))
-        longitudes = ds.createVariable('lon', np.float32, ('y', 'x',))
-
-        for var_name in self.data.keys():
-            globals()[var_name] = ds.createVariable(var_name, np.float32, ('y', 'x',))
-            globals()[var_name][:, :] = self.data[var_name]['data']
-            globals()[var_name].units = self.data[var_name]['units']
-            globals()[var_name].scale_factor = self.data[var_name]['scale_factor']
-
-        # Global Attributes
-        ds.description = ''  # % self.data.keys()
-        ds.history = 'Created ' + time.ctime(time.time())
-        ds.source = 'NERSC'
-
-        # Variable Attributes
-        latitudes.units = 'degree_north'
-        longitudes.units = 'degree_east'
-        times.units = 'hours since 0001-01-01 00:00:00'
-        times.calendar = 'gregorian'
-
-        # Put variables
-        latitudes[:, :] = self.lats
-        longitudes[:, :] = self.lons
-
-        ds.close()
-        print('\n%s has been successefully created.\n' % out_fname)
-        self.nc_file = out_fname
-
     def normalizeInt(self, r):
         '''
         Rescale data into defined range of integer values
