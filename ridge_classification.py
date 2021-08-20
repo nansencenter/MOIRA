@@ -19,28 +19,6 @@ class SarImage:
         self.meta = {}
         self.ds = {}
 
-        # os.makedirs(os.path.dirname(outFname), exist_ok=True)
-
-        try:
-            pass
-            '''
-            print('Opening %s ...' % os.path.basename(zipPath))
-            s1 = Sentinel1Image(zipPath)
-
-            if bbox:
-                s0 = s1[self.polBand][bbox[0]:bbox[1], bbox[2]:bbox[3]]
-            else:
-                s0 = s1[self.polBand]
-            #nesz = s1['sigma0_%s' % pol]    
-            self.data[self.polBand] = 10*np.log10(s0)
-            self.data[self.polBand][np.isinf(self.data[self.polBand])] = np.nan
-            #self.lons, self.lats = s1.get_geolocation_grids()
-
-            print('Done')
-            '''
-        except:
-            print('\nError while opening %s. Plese check the filepath and poalrization.' % zipPath)
-
     def transform_gcps(self, gcp_list, ct):
         new_gcp_list = []
         for gcp in gcp_list:
@@ -177,7 +155,6 @@ class SarImage:
         tiff_name = os.path.basename(input_tiff_path)
         self.data[tiff_name] = (measurement_file_array * measurement_file_array) / (
                     radiometric_coefficients_array * radiometric_coefficients_array)
-
         # save_array_as_geotiff_gcp_mode(calibrated_array, output_tiff_path, measurement_file)
 
     def calibrate_project(self, t_srs, res, mask=False, write_file=True, out_path='.'):
@@ -257,8 +234,9 @@ class SarImage:
                 pol = var_name.split('-')[3]
 
                 if write_file:
-                    ds_warp2 = gdal.Warp('%s/%s' % (out_path, os.path.basename(tiffPath)), tmp_ds, format="GTiff",
-                                         dstSRS="EPSG:%s" % t_srs,
+                    out_fname = '%s/%s' % (out_path, os.path.basename(tiffPath))
+                    os.makedirs(os.path.dirname(out_fname), exist_ok=True)
+                    ds_warp2 = gdal.Warp(out_fname, tmp_ds, format="GTiff", dstSRS="EPSG:%s" % t_srs,
                                          xRes=res, yRes=res, multithread=True, callback=clb)
 
                     self.data['s0_%s' % pol] = {}
@@ -346,12 +324,12 @@ class SarImage:
 
         for var_name in data.keys():
             globals()[var_name] = ds.createVariable(var_name, np.float32, ('y', 'x',))
-            globals()[var_name][:, :] = data[var_name]['data']
+            globals()[var_name][:] = data[var_name]['data']
             globals()[var_name].units = data[var_name]['units']
             globals()[var_name].scale_factor = data[var_name]['scale_factor']
 
         # Global Attributes
-        ds.description = ''  # % self.data.keys()
+        ds.description = ''
         ds.history = 'Created ' + time.ctime(time.time())
         ds.source = 'NERSC'
 
@@ -377,8 +355,6 @@ class SarTextures(SarImage):
 
     def __init__(self, zipPath, ws, stp, threads):
         super().__init__(zipPath)
-        # self.zipPath = zipPath
-
         self.ws = ws
         self.stp = stp
         self.threads = threads
@@ -560,8 +536,8 @@ class SarTextures(SarImage):
             self.getLatsLons()
             print('Done.\n')
 
-        self.glcm_features['lats'] = self.lats[::self.stp, ::self.stp]
-        self.glcm_features['lons'] = self.lons[::self.stp, ::self.stp]
+        self.glcm_features['lats'] = self.lats[0:-self.ws + 1, 0:-self.ws + 1][::self.stp, ::self.stp]
+        self.glcm_features['lons'] = self.lons[0:-self.ws + 1, 0:-self.ws + 1][::self.stp, ::self.stp]
 
         # self.smooth()
 
@@ -576,7 +552,7 @@ class SarTextures(SarImage):
         print('\nStart GLCM computation...')
 
         for iband in self.norm_data.keys():
-            print(iband)
+            print(f'{iband}\n')
             self.glcm_features[iband] = {}
             texFts = self.getTextureFeatures(self.norm_data[iband])
 
@@ -599,3 +575,244 @@ class SarTextures(SarImage):
             out_fname_nc = '%s/%s_%s' % (os.path.dirname(out_fname), ivar, os.path.basename(out_fname))
             super().export_netcdf(self.glcm_features['lats'], self.glcm_features['lons'],
                                   self.glcm_features[ivar], out_fname_nc)
+
+
+class GeoTiff:
+    '''
+    Basic processing of GeoTiff files
+    '''
+
+    def __init__(self, name):
+        self.name = name
+        ds = gdal.Open(self.name)
+        self.data = ds.ReadAsArray()
+        del ds
+
+    def getLatsLons(self):
+        '''
+        Get matrices with lats and lons from GeoTIFF file
+        '''
+
+        ds = gdal.Open(self.name)
+        rows, columns = self.data.shape[0], self.data.shape[1]
+
+        lon_2d = np.empty((rows, columns))
+        lon_2d[:] = np.nan
+
+        lat_2d = np.empty((rows, columns))
+        lat_2d[:] = np.nan
+
+        geotransform = ds.GetGeoTransform()
+        old_cs = osr.SpatialReference()
+        old_cs.ImportFromWkt(ds.GetProjection())
+        new_cs = osr.SpatialReference()
+        new_cs.ImportFromProj4('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+        transform = osr.CoordinateTransformation(old_cs, new_cs)
+        pixelWidth = geotransform[1]
+        pixelHeight = geotransform[-1]
+
+        # 2D indexes for all elements
+        idxs_2d = []
+
+        # Compute 2d arrays of lat lon
+        for i, idx_line in enumerate(range(0, rows)):
+            for j, idx_col in enumerate(range(0, columns)):
+
+                # Convert x and y to lon lat
+                xx1 = geotransform[0] + idx_col * pixelWidth
+                yy1 = geotransform[3] + idx_line * pixelHeight
+
+                # Check gdal version first
+                ss = gdal.__version__
+                if int(ss[0]) >= 3:
+                    latlon = transform.TransformPoint(float(xx1), float(yy1))
+                else:
+                    latlon = transform.TransformPoint(float(yy1), float(xx1))
+
+                ilon = latlon[0]
+                ilat = latlon[1]
+
+                if np.isnan(ilon):
+                    print('Row, Column: %s, %s' % (idx_line, idx_col))
+
+                lon_2d[i, j] = ilon
+                lat_2d[i, j] = ilat
+
+        self.lats = lat_2d
+        self.lons = lon_2d
+
+        del ds
+
+
+class VectorData:
+    """
+    Class for vector data processing
+
+    Args:
+        filepath (str): Path to shapefile to rasterize
+        raster_ds (str/GDAL object): GDAL object or path to raster (geotiff) file
+
+   """
+
+    def __init__(self, filepath, raster_ds):
+        self.filepath = filepath
+        if isinstance(raster_ds, gdal.Dataset):
+            self.raster_ds = raster_ds
+        elif isinstance(raster_ds, str) and (raster_ds.endswith('tiff') or raster_ds.endswith('tif')):
+            print(f'\nOpening {raster_ds} with GDAL...\n')
+            self.raster_ds = gdal.Open(raster_ds)
+            print('Done.\n')
+        else:
+            print(f'\nError: {raster_ds} is not supported.\n')
+
+    def rasterize(self, out_filename):
+        '''
+        Raterizing shapefile
+        '''
+
+        # Get georefernecinf from raster ds
+        geo_transform = self.raster_ds.GetGeoTransform()
+        projection = self.raster_ds.GetProjection()
+        x_min = geo_transform[0]
+        y_max = geo_transform[3]
+        x_max = x_min + geo_transform[1] * self.raster_ds.RasterXSize
+        y_min = y_max + geo_transform[5] * self.raster_ds.RasterYSize
+        width = self.raster_ds.RasterXSize
+        height = self.raster_ds.RasterYSize
+
+        x_res = geo_transform[1]
+        y_res = geo_transform[5]
+
+        # Open and reproject vector data
+        line_ds = ogr.Open(self.filepath)
+        line_layer = line_ds.GetLayer()
+        sourceprj = line_layer.GetSpatialRef()
+        targetprj = osr.SpatialReference(wkt=self.raster_ds.GetProjection())
+        transform = osr.CoordinateTransformation(sourceprj, targetprj)
+
+        mem = ogr.GetDriverByName("ESRI Shapefile")
+        line_layer_reprojected = mem.CreateDataSource("temp.shp")
+        outlayer = line_layer_reprojected.CreateLayer('', targetprj, ogr.wkbLineString)
+
+        for feature in line_layer:
+            transformed = feature.GetGeometryRef()
+            transformed.Transform(transform)
+            geom = ogr.CreateGeometryFromWkb(transformed.ExportToWkb())
+            defn = outlayer.GetLayerDefn()
+            feat = ogr.Feature(defn)
+            feat.SetGeometry(geom)
+            outlayer.CreateFeature(feat)
+            feat = None
+
+        del line_layer_reprojected
+
+        rasterized = gdal.Rasterize('MEM', 'temp.shp', format='MEM', outputBounds=[x_min, y_min, x_max, y_max],
+                                    xRes=x_res, yRes=y_res, burnValues=[1])
+
+        rasterized_projected = gdal.Warp(out_filename, rasterized, format='GTiff', dstSRS=projection)
+
+        del rasterized
+        del rasterized_projected
+        del self.raster_ds
+
+
+class Resampler:
+    '''
+    Resampling of data from source grid onto another
+    '''
+
+    formats = {'nc': 'netcdf',
+               'tiff': 'geotiff',
+               'tif': 'geotiff'
+               }
+
+    def __init__(self, f_source, f_target):
+        self.f_source = {}
+        self.f_target = {}
+        self.f_source['name'] = f_source
+        self.f_target['name'] = f_target
+
+        self.f_source['format'] = self.__check_file_format(self.f_source['name'])
+        self.f_target['format'] = self.__check_file_format(self.f_target['name'])
+
+        print('\nReading source file: %s ...' % self.f_source['name'])
+        if self.f_source['format'] == 'tif':
+            self.f_source['format'] = 'tiff'
+        func = getattr(self, 'read_%s' % self.f_source['format'])
+        self.f_source = func(self.f_source['name'])
+        print('Done.\n')
+
+        print('\nReading target file: %s ...' % self.f_target['name'])
+        func = getattr(self, 'read_%s' % self.f_target['format'])
+        self.f_target = func(self.f_target['name'])
+        print('Done.\n')
+
+    def __check_file_format(self, fname):
+        filename, file_extension = os.path.splitext(fname)
+        file_extension = file_extension[1:]
+
+        if file_extension in [x for x in self.formats.keys()]:
+            return file_extension
+        else:
+            print(f'\nSorry, {file_extension} is not supported.\n')
+
+    def read_nc(self, f):
+        '''
+        Get data from NetCDF file
+        '''
+        var_geo_time = ['time', 'lon', 'lat']
+        res = {}
+        res['data'] = {}
+        nc = Dataset(f, 'r')
+
+        # Get variable names with data
+        data_vars = [var for var in nc.variables if not var in var_geo_time]
+
+        for var in data_vars:
+            res['data'][var] = nc[var][:].data
+            res['units'] = ''
+            res['scale_factor'] = 1.
+
+        res['lons'] = nc['lon'][:].data
+        res['lats'] = nc['lat'][:].data
+
+        del nc
+
+        return res
+
+    def read_tiff(self, f):
+        '''
+        Get data and lats lons from GeoTiff file
+        '''
+        f = GeoTiff(f)
+        f.getLatsLons()
+
+        res = {}
+        res['data'] = {}
+        res['data']['s0'] = f.data
+        res['units'] = 'dB'
+        res['scale_factor'] = 1.
+        res['lons'] = f.lons
+        res['lats'] = f.lats
+
+        return res
+
+    def resample(self, orig_lons, orig_lats, targ_lons, targ_lats, data, method='gauss', radius_of_influence=500000):
+        '''
+        Resampling data
+        '''
+
+        xsize, ysize = targ_lons.shape
+
+        orig_def = pyresample.geometry.SwathDefinition(lons=orig_lons.ravel(), lats=orig_lats.ravel())
+        targ_def = pyresample.geometry.SwathDefinition(lons=targ_lons.ravel(), lats=targ_lats.ravel())
+
+        if method == 'gauss':
+            data_int = pyresample.kd_tree.resample_gauss(orig_def, data.ravel(), targ_def,
+                                                         radius_of_influence=radius_of_influence, neighbours=100,
+                                                         sigmas=250000, fill_value=None)
+        if method == 'nearest':
+            data_int = pyresample.kd_tree.resample_nearest(orig_def, data.ravel(), targ_def,
+                                                           radius_of_influence=radius_of_influence, fill_value=None)
+
+        return data_int.reshape(xsize, ysize)
