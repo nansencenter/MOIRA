@@ -69,7 +69,19 @@ Then the obtaned results can be stored in NetCDF4 file:
 To classify ice into two classes: ridged/non-ridged sea ice a class first you need to train a classifier. To do that data for trainig should be prepared and passed into class `ridgedIceClassifier`
 
 ```python
-	ridgedIceClassifier(glcm_filelist, ridges_filelist, flat_filelist, defo_filelist, defo_training=False)
+	clf = ridgedIceClassifier(glcm_filelist, ridges_filelist, flat_filelist, defo_filelist, defo_training=False)
 ```
 
 where `glcm_filelist` - file list containing SAR texture features calculated during the Step 4; `ridges_filelist` - file list containing rasterized ridges in geotiff format; `flat_filelist` - file list containing rasterized flat ice regions in geotiff format; `defo_filelist` (optional) - file list containing ice deformation data; `defo_training` - should be set to True if you want to use ice deformation data for training.
+
+when data initialized the train data will be stored as Pandas data frame in `train_data` atribute:
+
+```python
+	clf.train_data
+```
+
+To train Random-Forests classifier you should pass texture feature name list into `train_rf_classifier` method. In our case we pass all of them form `glcm_names` list:
+
+```python
+	clf.train_rf_classifier(clf.glcm_names)
+```
