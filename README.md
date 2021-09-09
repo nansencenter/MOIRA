@@ -25,7 +25,7 @@ where `PATH/TO/S1/FILE` is a path to Sentinel-1 GRD (EW/IW) Level-1 file; `ws` -
 
 ## 2. Calibrate and project Sentinel-1 image
 
-Peform data calibration and projection into Polar Stereographic projection (EPSG:5041) with a spatial resolution of `res` [meters].
+Peform data calibration and projection onto Polar Stereographic projection (EPSG:5041) with a spatial resolution of `res` [meters].
 
 ```python
 	t.calibrate_project(5041, res, mask=False, write_file=False, out_path='/OUTPUT/DIRECTORY')	
@@ -35,14 +35,14 @@ other parameters includes: `write_file` - allows to export the calibrated data a
 
 ## 3. Vector data preparation
 
-The classification require reference data for the training. The common way to produce that is manual mapping of ridged and flat ice using one of GIS software. Once it is done, a vector file should be initialized by class for vector data processing called `python VectorData`:
+The classification require reference data for the training. The common way to produce that is manual mapping of ridged and flat ice using one of GIS software. Once it is done, a vector file should be initialized by class for vector data processing called `VectorData`:
 
 ```python
 
 v = VectorData('/PATH/TO/VECTOR/FILE', t.ds[list(t.ds.keys())[0]], downsample=True)
 ```
 
-where `python t.ds[list(t.ds.keys())[0]]` is a gdal object with a projected geotiff from a previous step and we also set a `python downsample` parameter to True to make further computations more fast. 
+where `t.ds[list(t.ds.keys())[0]]` is a gdal object with a projected geotiff from a previous step and we also set a `downsample` parameter to True to make further computations more fast. 
 
 
 ```python
