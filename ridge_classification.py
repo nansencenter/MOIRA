@@ -178,6 +178,9 @@ class SarImage:
         target.ImportFromEPSG(t_srs)
         ct = self.get_transformation(target)
 
+        # TODO
+        print('\nPaths to tiff files: %s\n' % tiffPaths)
+
         for tiffPath in tiffPaths:
             print('Prcessing %s ...' % os.path.basename(tiffPath))
             # Find calibration and noise annotation files
@@ -211,6 +214,11 @@ class SarImage:
                 driver = gdal.GetDriverByName('GTiff')
 
                 [rows, cols] = self.data[os.path.basename(tiffPath)].shape
+
+                try:
+                    os.remove('temp.tif')
+                except:
+                    pass
 
                 outdata = driver.Create('temp.tif', cols, rows, 1, gdal.GDT_Float32)
                 outdata.SetGCPs(new_gcp_list, target.ExportToWkt())
@@ -654,14 +662,33 @@ class VectorData:
 
    """
 
-    def __init__(self, filepath, raster_ds):
+    def __init__(self, filepath, raster_ds, downsample=False):
         self.filepath = filepath
         if isinstance(raster_ds, gdal.Dataset):
             self.raster_ds = raster_ds
+
+            if downsample:
+                print('\nDownsampling...\n')
+                gt = self.raster_ds.GetGeoTransform()
+                pixelSizeX = gt[1]
+                pixelSizeY = -gt[5]
+                self.raster_ds = gdal.Translate('', self.raster_ds, xRes=pixelSizeX * 3, yRes=pixelSizeX * 3,
+                                                resampleAlg="bilinear", format='vrt')
+                print('Done.\n')
+
         elif isinstance(raster_ds, str) and (raster_ds.endswith('tiff') or raster_ds.endswith('tif')):
             print(f'\nOpening {raster_ds} with GDAL...\n')
             self.raster_ds = gdal.Open(raster_ds)
             print('Done.\n')
+
+            if downsample:
+                print('\nDownsampling...\n')
+                gt = self.raster_ds.GetGeoTransform()
+                pixelSizeX = gt[1]
+                pixelSizeY = -gt[5]
+                self.raster_ds = gdal.Translate('', self.raster_ds, xRes=pixelSizeX * 3, yRes=pixelSizeX * 3,
+                                                resampleAlg="bilinear", format='vrt')
+                print('Done.\n')
         else:
             print(f'\nError: {raster_ds} is not supported.\n')
 
@@ -735,14 +762,14 @@ class Resampler:
         self.f_source['format'] = self.__check_file_format(self.f_source['name'])
         self.f_target['format'] = self.__check_file_format(self.f_target['name'])
 
-        print('\nReading source file: %s ...' % self.f_source['name'])
+        print('\nResampling source file: %s ...' % self.f_source['name'])
         if self.f_source['format'] == 'tif':
             self.f_source['format'] = 'tiff'
         func = getattr(self, 'read_%s' % self.f_source['format'])
         self.f_source = func(self.f_source['name'])
         print('Done.\n')
 
-        print('\nReading target file: %s ...' % self.f_target['name'])
+        print('\nResampling target file: %s ...' % self.f_target['name'])
         func = getattr(self, 'read_%s' % self.f_target['format'])
         self.f_target = func(self.f_target['name'])
         print('Done.\n')
@@ -816,3 +843,317 @@ class Resampler:
                                                            radius_of_influence=radius_of_influence, fill_value=None)
 
         return data_int.reshape(xsize, ysize)
+
+
+class dataReader:
+    '''
+    Class for reading data in different formats
+    '''
+
+    def __init__(self):
+        pass
+
+    def read_nc(self, f):
+        '''
+        Get data from NetCDF file
+        '''
+        var_geo_time = ['time', 'lon', 'lat']
+        res = {}
+        res['data'] = {}
+        nc = Dataset(f, 'r')
+
+        # Get variable names with data
+        data_vars = [var for var in nc.variables if not var in var_geo_time]
+
+        for var in data_vars:
+            res['data'][var] = nc[var][:].data
+            res['units'] = ''
+            res['scale_factor'] = 1.
+
+        res['lons'] = nc['lon'][:].data
+        res['lats'] = nc['lat'][:].data
+
+        del nc
+
+        return res
+
+    def read_tiff(self):
+        '''
+        Get data and lats lons from GeoTiff file
+        '''
+        f = GeoTiff(f)
+        f.getLatsLons()
+
+        res = {}
+        res['data'] = {}
+        res['data']['s0'] = f.data
+        res['units'] = 'dB'
+        res['scale_factor'] = 1.
+        res['lons'] = f.lons
+        res['lats'] = f.lats
+
+        return res
+
+
+class ridgedIceClassifier(dataReader):
+    '''
+    Train and classify ridged/no ridged ice
+    '''
+
+    def __init__(self, glcm_filelist, ridges_filelist, flat_filelist, defo_filelist, defo_training=True):
+        # Feature namelist
+        self.glcm_names = ['Angular Second Moment',
+                           'Contrast',
+                           'Correlation',
+                           'Sum of Squares: Variance',
+                           'Inverse Difference Moment',
+                           'Sum Average',
+                           'Sum Variance',
+                           'Sum Entropy',
+                           'Entropy',
+                           'Difference Variance',
+                           'Difference Entropy',
+                           'Information Measures of Correlation',
+                           'Maximal Correlation Coefficient']
+
+        self.defo_training = defo_training
+        self.glcm_filelist = glcm_filelist
+        self.ridges_filelist = ridges_filelist
+        self.flat_filelist = flat_filelist
+        self.defo_filelist = defo_filelist
+
+        self.glcm_unique_datetimes = self.get_unq_dt_from_files(self.glcm_filelist, 'GLCM')
+        self.ridges_unique_datetimes = self.get_unq_dt_from_files(self.ridges_filelist, 'Ridged ice')
+        self.flat_unique_datetimes = self.get_unq_dt_from_files(self.flat_filelist, 'Flat ice')
+        self.defo_unique_datetimes = self.get_unq_dt_from_files(self.defo_filelist, 'Ice deformation')
+
+        if defo_training:
+            self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
+                                                          self.flat_unique_datetimes, self.defo_unique_datetimes])
+        else:
+            self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
+                                                          self.flat_unique_datetimes])
+
+            self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist)
+
+    @staticmethod
+    def get_unq_dt_from_files(file_list, name):
+        '''
+        Get unique date and times form list of files
+        '''
+
+        dts_str = []
+        dts = []
+        for ifile in file_list:
+            idt = re.findall(r'\d\d\d\d\d\d\d\d\w\d\d\d\d', ifile)[0]
+            dts_str.append(idt)
+
+        dts_str.sort()
+        dts_str = set(dts_str)
+        dts_str = list(dts_str)
+        dts_str.sort()
+
+        # Convert to Python date time format
+        if dts_str:
+            for idt_str in dts_str:
+                idt_str = '%s-%s-%s %s:%s' % (idt_str[0:4], idt_str[4:6], idt_str[6:8], idt_str[9:11], idt_str[11:13])
+                idt = datetime.strptime(idt_str, '%Y-%m-%d %H:%M')
+                dts.append(idt)
+            print(f'Unique dates for {name}: {dts}')
+        else:
+            print(f'No dates for {name}')
+
+        return dts
+
+    @staticmethod
+    def get_matched_dt(file_lists):
+        '''
+        Get mathced date and times for file lists
+        '''
+        dt_matched = []
+
+        for idt in file_lists[0]:
+            flag = 1
+            for il in file_lists[1:]:
+                if not idt in il:
+                    flag = 0
+                else:
+                    pass
+
+            if flag == 1:
+                dt_matched.append(idt)
+
+            else:
+                pass
+
+        print(f'\nMatched dates for all file lists: {dt_matched}\n')
+
+        return dt_matched
+
+    def collocate_data(self, *args):
+        '''
+        Collocate all data from file lists
+        '''
+
+        # Flat ice GLCM features
+        d_flat = {}
+
+        # Ridged ice GLCM features
+        d_ridged = {}
+
+        # Form dictonary for results
+        for ft_name in self.glcm_names:
+            d_flat.setdefault(ft_name, [])
+            d_ridged.setdefault(ft_name, [])
+
+        if self.defo_training:
+            # Add divergence and shear
+            d_flat.setdefault('div', [])
+            d_ridged.setdefault('div', [])
+            d_flat.setdefault('shear', [])
+            d_ridged.setdefault('shear', [])
+
+        if self.matched_datetimes:
+            for idt in self.matched_datetimes:
+                # print(f'\nData collocation for {idt}\n')
+                date_time = idt.strftime('%Y%m%dT%H%M')
+
+                dt_files = []
+
+                for x in args:
+                    for ifile in x:
+                        if date_time in ifile:
+                            dt_files.append(ifile)
+
+                print('\nDone.\n')
+
+                print(f'Files for {idt}:\n {dt_files}\n Start collocation...')
+
+                # Resample data onto one grid
+                glcm_file = dt_files[0]
+                ridge_file = dt_files[1]
+                flat_file = dt_files[2]
+
+                if len(dt_files) == 4:
+                    defo_file = dt_files[2]
+                    # !TODO:
+                    print(f'\nInterpolating Deformation data \n{defo_file} \nto \n{glcm_file}...\n')
+                    r = Resampler(defo_file, glcm_file)
+                    data_int_defo = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                               r.f_target['lats'],
+                                               r.f_source['data']['shear'], method='gauss', radius_of_influence=500000)
+                    print(f'Done\n')
+                else:
+                    defo_file = None
+
+                print(f'\nInterpolating manual Ridge data \n{ridge_file} \nto \n{glcm_file}...\n')
+                r = Resampler(ridge_file, glcm_file)
+                data_int_ridge = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                            r.f_target['lats'],
+                                            r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
+                print(f'Done\n')
+
+                print(f'\nInterpolating manual Flat data \n{flat_file} \nto \n{glcm_file}...\n')
+                r = Resampler(flat_file, glcm_file)
+                data_int_flat = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                           r.f_target['lats'],
+                                           r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
+                print(f'Done\n')
+
+                ############################################
+                # Collect data over ridged and flat ice
+                ############################################
+                print('\nReading netcdf file...\n')
+                data_glcm = self.read_nc(glcm_file)
+                print('Done.\n')
+
+                for ft_name in self.glcm_names:
+                    ft = data_glcm['data'][ft_name][:]
+                    # Collect data for flat ice
+                    d_flat[ft_name].extend(ft[data_int_flat > 0].ravel())
+
+                    # Collect data for ridged ice
+                    d_ridged[ft_name].extend(ft[data_int_ridge > 0].ravel())
+
+        print('\nConverting data to Pandas data frame...\n')
+        d_df = {}
+        for ivar in self.glcm_names:
+            d_df[ivar] = list(d_ridged[ivar]) + list(d_flat[ivar])
+
+        # Define class of ice for the each set of features
+        # Classes of ice
+        # 1 - ridged ice
+        # 0 - flat ice
+        d_df['ice_class'] = [1 for i in range(len(d_ridged[ivar]))] + [0 for i in range(len(d_flat[ivar]))]
+
+        # The Pandas data frame contain all features for a certain grid cell
+        data_train_pca_ridges = pd.DataFrame(d_df)
+        data_train_pca_ridges[:]
+
+        self.train_data = data_train_pca_ridges[:]
+        print('Done.')
+
+    def train_rf_classifier(self, lf):
+        '''
+        Train Random Forests classifier
+        '''
+
+        print('\nTrain Random-Forests classifier...\n')
+
+        X = self.train_data[lf]  # Features
+        y = self.train_data['ice_class']  # Labels
+
+        # Split dataset into training set and test set
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)  # 70% training and XX% test
+
+        # Create a Gaussian Classifier
+        clf = RandomForestClassifier(n_estimators=1000)
+
+        # Train the model using the training sets y_pred=clf.predict(X_test)
+        self.classifier = clf.fit(X_train, y_train)
+
+        print('Done.\n')
+
+        y_pred = self.classifier.predict(X_test)
+
+        # Model Accuracy, how often is the classifier correct?
+        print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
+
+    def classify_data(self, glcm_file, defo_file=None, roi=None):
+        '''
+        Classify SAR image using Random Foresrs classifier
+        '''
+
+        glcm_file = self.read_nc(glcm_file)
+        num_rows, num_columns = glcm_file['data'][list(f['data'].keys())[0]].shape
+
+        classified_data = np.zeros((num_rows, num_columns))
+        classified_data[:] = np.nan
+
+        if roi:
+            r_min, r_max, c_min, c_max = roi
+        else:
+            r_min, r_max = 0, num_rows
+            c_min, c_max = 0, num_columns
+
+        print(f'\nROI: {r_min} {r_max} {c_min} {c_max}\n')
+
+        # r_min, r_max = 0, classified_data.shape[0]
+        # c_min, c_max = 0, classified_data.shape[1]
+
+        # Classification
+        for row in range(r_min, r_max):
+            for column in range(c_min, c_max):
+                test_sample = []
+
+                for i_ft in self.glcm_names:
+                    test_sample.append(glcm_file['data'][i_ft][row, column])
+
+                y_pred = clf.classifier.predict([test_sample])
+                classified_data[row, column] = y_pred
+
+        plt.clf()
+        # plt.title(lf)
+        plt.imshow(classified_data[r_min:r_max, c_min:c_max], cmap='jet')
+        # plt.imshow(classified_data)
+        self.classified_data = classified_data
