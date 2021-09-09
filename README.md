@@ -86,10 +86,10 @@ To train Random-Forests classifier you should pass texture feature name list int
 	clf.train_rf_classifier(clf.glcm_names)
 ```
 
-To classify data based on SAR texture characteristics (see Step 4) use:
+To classify data based on SAR texture characteristics (see Step 4) and ice deformation data (optional) use:
 
 ```python
-	result = clf.classify_data('PATH/TO/SAR/TEXTURES/FILE', 'PATH/TO/ICE/DEFORMATION/FILE'(optional), [r_min, r_max, c_min, c_max])
+	result = clf.classify_data('PATH/TO/SAR/TEXTURES/FILE', 'PATH/TO/ICE/DEFORMATION/FILE' (optional), [r_min, r_max, c_min, c_max] (optional))
 ```
 
 where `[r_min, r_max, c_min, c_max]` is bounding box in pixel coordinates
