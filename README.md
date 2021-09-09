@@ -46,6 +46,6 @@ where `python t.ds[list(t.ds.keys())[0]]` is a gdal object with a projected geot
 
 
 ```python
-v.rasterize('/mnt/sverdrup-2/sat_auxdata/MOIRA/data/test_classification/flat_rasters/20201222T203955_flat_new.tiff')
+v.rasterize('PATH/TO/RASTERIZED/GEOTIFF/TIFE')
 
 ```
