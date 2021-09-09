@@ -8,9 +8,9 @@ The package also includes some tools that helps to prepare the data for classifi
 The following Quickstart guide covers all the essentials steps to perform sea ice ridge classification in step by step manner.
 
 1. Open Sentinel-1 image
-
+```
 	t = SarTextures(PATH/TO/S1/FILE, ws=11, stp=15, threads=10)
-	
+```
 where PATH/TO/S1/FILE is a path to Sentinel-1 GRD (EW/IW) Level-1 file; ws - windows size for texture features computation; stp - computational grid step size; threads - numner of threads.
 
 2. Calibrate and project Sentinel-1 image
