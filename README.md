@@ -80,8 +80,16 @@ when data initialized the train data will be stored as Pandas data frame in `tra
 	clf.train_data
 ```
 
-To train Random-Forests classifier you should pass texture feature name list into `train_rf_classifier` method. In our case we pass all of them form `glcm_names` list:
+To train Random-Forests classifier you should pass texture feature name list into `train_rf_classifier` method. In our case we pass all of them using `glcm_names` list:
 
 ```python
 	clf.train_rf_classifier(clf.glcm_names)
 ```
+
+To classify data based on SAR texture characteristics (see Step 4) use:
+
+```python
+	result = clf.classify_data('PATH/TO/SAR/TEXTURES/FILE', 'PATH/TO/ICE/DEFORMATION/FILE'(optional), [r_min, r_max, c_min, c_max])
+```
+
+where `[r_min, r_max, c_min, c_max]` is bounding box in pixel coordinates
