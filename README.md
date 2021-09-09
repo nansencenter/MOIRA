@@ -39,13 +39,37 @@ The classification require reference data for the training. The common way to pr
 
 ```python
 
-v = VectorData('/PATH/TO/VECTOR/FILE', t.ds[list(t.ds.keys())[0]], downsample=True)
+	v = VectorData('/PATH/TO/VECTOR/FILE', t.ds[list(t.ds.keys())[0]], downsample=True)
 ```
 
 where `t.ds[list(t.ds.keys())[0]]` is a gdal object with a projected geotiff from a previous step and we also set a `downsample` parameter to True to make further computations more fast. 
 
 
 ```python
-v.rasterize('PATH/TO/RASTERIZED/GEOTIFF/TIFE')
+	v.rasterize('PATH/TO/RASTERIZED/GEOTIFF/TIFE')
 
 ```
+
+## 4. SAR texture calculation
+
+To calculate SAR texture characteristics which are GLCM features a method called `t.calcTexFt()` is used:
+
+```python
+	t.calcTexFt()
+```
+
+Then the obtaned results can be stored in NetCDF4 file:
+
+```python
+t.export_netcdf('PATH/TO/OUTPUT/NETCDF')
+```
+
+## 5. Ridged ice detection
+
+To classify ice into two classes: ridged/non-ridged sea ice a class first you need to train a classifier. To do that data for trainig should be prepared and passed into class `ridgedIceClassifier`
+
+```python
+ridgedIceClassifier(glcm_filelist, ridges_filelist, flat_filelist, defo_filelist, defo_training=False)
+```
+
+where `glcm_filelist` - file list containing SAR texture features calculated during Step 4; `ridges_filelist` - file list containing rasterized ridges in geotiff format; `flat_filelist` - file list containing rasterized flat ice regions in geotiff format; `defo_filelist` (optional) - file list containing ice deformation data; defo_training - should be set to True if you want to use ice deformation data for training.
