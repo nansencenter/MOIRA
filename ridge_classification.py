@@ -3,9 +3,9 @@ class SarImage:
     Basic S1 L1 GRD image processing
     '''
 
-    def __init__(self, zipPath):
+    def __init__(self, zipPath, bbox=None):
         self.name = zipPath
-        # self.bbox = bbox
+        self.bbox = bbox
         self.data = {}
 
         # s0 range in dB
@@ -244,8 +244,17 @@ class SarImage:
                 if write_file:
                     out_fname = '%s/%s' % (out_path, os.path.basename(tiffPath))
                     os.makedirs(os.path.dirname(out_fname), exist_ok=True)
-                    ds_warp2 = gdal.Warp(out_fname, tmp_ds, format="GTiff", dstSRS="EPSG:%s" % t_srs,
-                                         xRes=res, yRes=res, multithread=True, callback=clb)
+
+                    if self.bbox:
+                        print(f'\nCropping data {self.bbox}')
+                        ds_warp2 = gdal.Warp(out_fname, tmp_ds, format="GTiff", dstSRS="EPSG:%s" % t_srs,
+                                             xRes=res, yRes=res, multithread=True, callback=clb,
+                                             outputBoundsSRS='EPSG:4326',
+                                             outputBounds=self.bbox)
+                        print('Done\n')
+                    else:
+                        ds_warp2 = gdal.Warp(out_fname, tmp_ds, format="GTiff", dstSRS="EPSG:%s" % t_srs,
+                                             xRes=res, yRes=res, multithread=True, callback=clb)
 
                     self.data['s0_%s' % pol] = {}
                     self.data['s0_%s' % pol]['data'] = ds_warp2.ReadAsArray()
@@ -257,8 +266,19 @@ class SarImage:
 
                     self.meta['ds_fname'] = ds_fname
                 else:
-                    ds_warp2 = gdal.Warp('', tmp_ds, format="MEM", dstSRS="EPSG:%s" % t_srs,
-                                         xRes=res, yRes=res, multithread=True, callback=clb)
+                    # ds_warp2 = gdal.Warp('', tmp_ds, format="MEM", dstSRS="EPSG:%s" % t_srs,
+                    #                    xRes=res, yRes=res, multithread=True, callback=clb)
+
+                    if self.bbox:
+                        print(f'\nCropping data {self.bbox}')
+                        ds_warp2 = gdal.Warp('', tmp_ds, format="GTiff", dstSRS="EPSG:%s" % t_srs,
+                                             xRes=res, yRes=res, multithread=True, callback=clb,
+                                             outputBoundsSRS='EPSG:4326',
+                                             outputBounds=self.bbox)
+                        print('Done\n')
+                    else:
+                        ds_warp2 = gdal.Warp('', tmp_ds, format="GTiff", dstSRS="EPSG:%s" % t_srs,
+                                             xRes=res, yRes=res, multithread=True, callback=clb)
 
                     self.data['s0_%s' % pol] = {}
                     self.data['s0_%s' % pol]['data'] = ds_warp2.ReadAsArray()
@@ -361,11 +381,12 @@ class SarTextures(SarImage):
     Class for SAR textural features computation
     '''
 
-    def __init__(self, zipPath, ws, stp, threads):
+    def __init__(self, zipPath, ws, stp, threads, bbox):
         super().__init__(zipPath)
         self.ws = ws
         self.stp = stp
         self.threads = threads
+        self.bbox = bbox
 
         self.names_glcm = {
             1: "Angular Second Moment",
@@ -562,7 +583,11 @@ class SarTextures(SarImage):
         for iband in self.norm_data.keys():
             print(f'{iband}\n')
             self.glcm_features[iband] = {}
-            texFts = self.getTextureFeatures(self.norm_data[iband])
+
+            # !TODO: Calculate texture features from median filtered data
+            print('\nMedian filtering...\n')
+            texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
+            print('\nDone\n')
 
             # Adding GLCM data
             for i in range(len(texFts[:, 0, 0])):
@@ -747,11 +772,7 @@ class Resampler:
     '''
     Resampling of data from source grid onto another
     '''
-
-    formats = {'nc': 'netcdf',
-               'tiff': 'geotiff',
-               'tif': 'geotiff'
-               }
+    formats = {'nc': 'netcdf', 'tiff': 'geotiff', 'tif': 'geotiff'}
 
     def __init__(self, f_source, f_target):
         self.f_source = {}
@@ -1034,7 +1055,7 @@ class ridgedIceClassifier(dataReader):
                 ridge_file = dt_files[1]
                 flat_file = dt_files[2]
 
-                if len(dt_files) == 4:
+                if self.defo_training:
                     defo_file = dt_files[2]
                     # !TODO:
                     print(f'\nInterpolating Deformation data \n{defo_file} \nto \n{glcm_file}...\n')
@@ -1125,7 +1146,8 @@ class ridgedIceClassifier(dataReader):
         '''
 
         glcm_file = self.read_nc(glcm_file)
-        num_rows, num_columns = glcm_file['data'][list(f['data'].keys())[0]].shape
+        print(glcm_file)
+        num_rows, num_columns = glcm_file['data'][list(glcm_file['data'].keys())[0]].shape
 
         classified_data = np.zeros((num_rows, num_columns))
         classified_data[:] = np.nan
