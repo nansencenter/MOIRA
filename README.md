@@ -1,7 +1,7 @@
 # MOIRA
 
-The package allows to perform classification of ridged and flat ice from SAR image based on texture characteristics and ice deformation data.
-There are to way for the classification - using ice deformation data along with SAR textures and using only SAR texture information. We reccomend to use the both data sources as a more robust way to overcome obstacles caused by the similar signature of ridged ice and young ice in leads but the deformation data is optional for the algorithm.
+The package allows to perform classification of ridged and flat ice from SAR Sentinel-1 GRD Level-1 image based on texture characteristics and ice deformation data.
+There are two ways of classification - using ice deformation data along with SAR textures and using only SAR texture information. We reccomend to use the both data sources as a more robust way to overcome obstacles caused by the similar signature of ridged ice and young ice in leads but the deformation data is optional for the algorithm.
 
 The package also includes some tools that helps to prepare the data for classification. 
 
