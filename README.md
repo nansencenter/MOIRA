@@ -98,6 +98,7 @@ where `[r_min, r_max, c_min, c_max]` is bounding box in pixel coordinates
 
 ```python
 import matplotlib.pyplot as plt
+import glob
 plt.rcParams['figure.dpi'] = 150
 from ridge_classification import *
 
