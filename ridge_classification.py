@@ -1217,6 +1217,7 @@ class ridgedIceClassifier(dataReader):
         # c_min, c_max = 0, classified_data.shape[1]
 
         # Classification
+        start = time.time()
         for row in range(r_min, r_max):
             for column in range(c_min, c_max):
                 sys.stdout.write('\rRow, col number: %s %s' % (row, column))
@@ -1232,6 +1233,9 @@ class ridgedIceClassifier(dataReader):
                 y_pred = self.classifier.predict([test_sample])
                 classified_data[row, column] = y_pred
 
+        end = time.time()
+        print('\Done')
+        print('\nClassified in %s minutes' % ((end - start) / 60.))
         plt.clf()
         plt.imshow(classified_data[r_min:r_max, c_min:c_max], interpolation='nearest', cmap='jet')
         self.classified_data = classified_data
