@@ -115,7 +115,7 @@ test_clf.train_rf_classifier(test_clf.glcm_names)
 bbox = [150,200,400,470]
 
 # Classification
-test_clf.classify_data('/mnt/sverdrup-2/sat_auxdata/MOIRA/data/test_classification/glcm_features/norm_s0_vh_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc', None, bbox)
+test_clf.classify_data('test_classification/glcm_features/norm_s0_vh_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc', None, bbox)
 
 # Resample ground truth ridge data
 r = Resampler('test_classification/ridge_rasters/20201222T203955_hummock_new.tiff','test_classification/glcm_features/norm_s0_vh_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc')
