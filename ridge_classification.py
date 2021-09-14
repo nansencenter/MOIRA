@@ -655,7 +655,7 @@ class SarTextures(SarImage):
         Export results to NetCDF file
         '''
 
-        ks = [x for x in t.glcm_features.keys() if 's0' in x]
+        ks = [x for x in self.glcm_features.keys() if 's0' in x]
         for ivar in ks:
             out_fname_nc = '%s/%s_%s' % (os.path.dirname(out_fname), ivar, os.path.basename(out_fname))
             super().export_netcdf(self.glcm_features['lats'], self.glcm_features['lons'],
@@ -950,7 +950,7 @@ class dataReader:
 
         return res
 
-    def read_tiff(self):
+    def read_tiff(self, f):
         '''
         Get data and lats lons from GeoTiff file
         '''
@@ -1121,6 +1121,8 @@ class ridgedIceClassifier(dataReader):
 
                 print(f'\nInterpolating manual Ridge data \n{ridge_file} \nto \n{glcm_file}...\n')
                 r = Resampler(ridge_file, glcm_file)
+                print('##################')
+                print(r.f_source['data'])
                 data_int_ridge = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                             r.f_target['lats'],
                                             r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
@@ -1194,11 +1196,10 @@ class ridgedIceClassifier(dataReader):
 
     def classify_data(self, glcm_file, defo_file=None, roi=None):
         '''
-        Classify SAR image using Random Foresrs classifier
+        Classify SAR image using Random Forest classifier
         '''
 
         glcm_file = self.read_nc(glcm_file)
-        print(glcm_file)
         num_rows, num_columns = glcm_file['data'][list(glcm_file['data'].keys())[0]].shape
 
         classified_data = np.zeros((num_rows, num_columns))
@@ -1218,16 +1219,19 @@ class ridgedIceClassifier(dataReader):
         # Classification
         for row in range(r_min, r_max):
             for column in range(c_min, c_max):
+                sys.stdout.write('\rRow, col number: %s %s' % (row, column))
                 test_sample = []
 
                 for i_ft in self.glcm_names:
                     test_sample.append(glcm_file['data'][i_ft][row, column])
 
-                y_pred = clf.classifier.predict([test_sample])
+                if defo_file:
+                    for defo_ft in self.defo_names:
+                        test_sample.append(defo_file['data'][defo_ft][row, column])
+
+                y_pred = self.classifier.predict([test_sample])
                 classified_data[row, column] = y_pred
 
         plt.clf()
-        # plt.title(lf)
-        plt.imshow(classified_data[r_min:r_max, c_min:c_max], cmap='jet')
-        # plt.imshow(classified_data)
+        plt.imshow(classified_data[r_min:r_max, c_min:c_max], interpolation='nearest', cmap='jet')
         self.classified_data = classified_data
