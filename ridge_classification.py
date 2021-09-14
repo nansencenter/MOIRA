@@ -1121,8 +1121,7 @@ class ridgedIceClassifier(dataReader):
 
                 print(f'\nInterpolating manual Ridge data \n{ridge_file} \nto \n{glcm_file}...\n')
                 r = Resampler(ridge_file, glcm_file)
-                print('##################')
-                print(r.f_source['data'])
+
                 data_int_ridge = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                             r.f_target['lats'],
                                             r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)

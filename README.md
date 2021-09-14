@@ -93,3 +93,48 @@ To classify data based on SAR texture characteristics (see Step 4) and ice defor
 ```
 
 where `[r_min, r_max, c_min, c_max]` is bounding box in pixel coordinates
+
+## Quick start
+
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['figure.dpi'] = 150
+from ridge_classification import *
+
+glcm_filelist = glob.glob('test_classification/glcm_features/*.nc')
+flat_filelist = glob.glob('test_classification/flat_rasters/*.tiff')
+ridges_filelist = glob.glob('test_classification/ridge_rasters/*.tiff')
+defo_filelist = []
+
+test_clf = ridgedIceClassifier(glcm_filelist, ridges_filelist, flat_filelist, defo_filelist, defo_training=False)
+
+# Training
+test_clf.train_rf_classifier(test_clf.glcm_names)
+
+# Bounding box
+bbox = [150,200,400,470]
+
+# Classification
+test_clf.classify_data('/mnt/sverdrup-2/sat_auxdata/MOIRA/data/test_classification/glcm_features/norm_s0_vh_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc', None, bbox)
+
+# Resample ground truth ridge data
+r = Resampler('test_classification/ridge_rasters/20201222T203955_hummock_new.tiff','test_classification/glcm_features/norm_s0_vh_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc')
+rr = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'], r.f_target['lats'], r.f_source['data']['s0'])
+
+# Binarize ground truth data
+rr[rr>0]=1
+
+f, axarr = plt.subplots(1,2)
+axarr[0].imshow(rr[bbox[0]:bbox[1],bbox[2]:bbox[3]], interpolation='nearest')
+axarr[0].set_title('Ground truth ridge')
+
+axarr[1].imshow(test_clf.classified_data[bbox[0]:bbox[1],bbox[2]:bbox[3]], interpolation='nearest') #, cmap='gray')
+axarr[1].set_title('Classified ridge')
+```
+
+![alt text](test_clf.png)
+
+
+
+
+
