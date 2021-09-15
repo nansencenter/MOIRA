@@ -1247,12 +1247,13 @@ class ridgedIceClassifier(dataReader):
 
             data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                         r.f_target['lats'],
-                                        r.f_source['data']['ice_shear'], method='gauss',
+                                        r.f_source['data']['ice_shear'],
+                                        method='nearest',
                                         radius_of_influence=500000)
 
             data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                       r.f_target['lats'], r.f_source['data']['ice_divergence'],
-                                      method='gauss',
+                                      method='nearest',
                                       radius_of_influence=500000)
 
             data_int_shear[np.isnan(data_int_shear)] = 0
