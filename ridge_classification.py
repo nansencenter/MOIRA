@@ -1003,10 +1003,10 @@ class ridgedIceClassifier(dataReader):
         if defo_training:
             self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
                                                           self.flat_unique_datetimes, self.defo_unique_datetimes])
+            self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.defo_filelist)
         else:
             self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
                                                           self.flat_unique_datetimes])
-
             self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist)
 
     @staticmethod
@@ -1083,6 +1083,7 @@ class ridgedIceClassifier(dataReader):
             # Add divergence and shear
             d_flat.setdefault('div', [])
             d_ridged.setdefault('div', [])
+
             d_flat.setdefault('shear', [])
             d_ridged.setdefault('shear', [])
 
@@ -1107,17 +1108,6 @@ class ridgedIceClassifier(dataReader):
                 ridge_file = dt_files[1]
                 flat_file = dt_files[2]
 
-                if self.defo_training:
-                    defo_file = dt_files[2]
-                    # !TODO:
-                    print(f'\nInterpolating Deformation data \n{defo_file} \nto \n{glcm_file}...\n')
-                    r = Resampler(defo_file, glcm_file)
-                    data_int_defo = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
-                                               r.f_target['lats'],
-                                               r.f_source['data']['shear'], method='gauss', radius_of_influence=500000)
-                    print(f'Done\n')
-                else:
-                    defo_file = None
 
                 print(f'\nInterpolating manual Ridge data \n{ridge_file} \nto \n{glcm_file}...\n')
                 r = Resampler(ridge_file, glcm_file)
@@ -1134,6 +1124,24 @@ class ridgedIceClassifier(dataReader):
                                            r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
                 print(f'Done\n')
 
+                if self.defo_training:
+                    defo_file = dt_files[3]
+                    r = Resampler(defo_file, glcm_file)
+
+                    print(f'\nInterpolating Deformation data \n{defo_file} \nto \n{glcm_file}...\n')
+                    r = Resampler(defo_file, glcm_file)
+                    data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                                r.f_target['lats'],
+                                                r.f_source['data']['ice_shear'], method='gauss', radius_of_influence=500000)
+
+                    data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                              r.f_target['lats'],
+                                              r.f_source['data']['ice_divergence'], method='gauss', radius_of_influence=500000)
+                    print(f'Done\n')
+                else:
+                    defo_int_shear = None
+                    defo_int_div = None
+
                 ############################################
                 # Collect data over ridged and flat ice
                 ############################################
@@ -1149,10 +1157,31 @@ class ridgedIceClassifier(dataReader):
                     # Collect data for ridged ice
                     d_ridged[ft_name].extend(ft[data_int_ridge > 0].ravel())
 
+                if self.defo_training:
+                    # Collect data for flat ice
+                    data_int_div[np.isnan(data_int_div)] = 0
+                    data_int_shear[np.isnan(data_int_shear)] = 0
+
+                    d_flat['div'].extend(data_int_div[data_int_flat > 0].ravel())
+                    d_flat['shear'].extend(data_int_shear[data_int_flat > 0].ravel())
+
+                    # Collect data for ridged ice
+                    d_ridged['div'].extend(data_int_div[data_int_ridge > 0].ravel())
+                    d_ridged['shear'].extend(data_int_shear[data_int_ridge > 0].ravel())
+
         print('\nConverting data to Pandas data frame...\n')
         d_df = {}
-        for ivar in self.glcm_names:
-            d_df[ivar] = list(d_ridged[ivar]) + list(d_flat[ivar])
+
+        if self.defo_training:
+            print('##### %s' % self.glcm_names)
+            ft_names = list(self.glcm_names)
+            ft_names.extend(['div', 'shear'])
+            print('##### %s' % ft_names)
+            for ivar in ft_names:
+                d_df[ivar] = list(d_ridged[ivar]) + list(d_flat[ivar])
+        else:
+            for ivar in self.glcm_names:
+                d_df[ivar] = list(d_ridged[ivar]) + list(d_flat[ivar])
 
         # Define class of ice for the each set of features
         # Classes of ice
