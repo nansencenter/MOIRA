@@ -1132,11 +1132,11 @@ class ridgedIceClassifier(dataReader):
                     r = Resampler(defo_file, glcm_file)
                     data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                                 r.f_target['lats'],
-                                                r.f_source['data']['ice_shear'], method='gauss', radius_of_influence=500000)
+                                                r.f_source['data']['ice_shear'], method='nearest', radius_of_influence=500000)
 
                     data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                               r.f_target['lats'],
-                                              r.f_source['data']['ice_divergence'], method='gauss', radius_of_influence=500000)
+                                              r.f_source['data']['ice_divergence'], method='nearest', radius_of_influence=500000)
                     print(f'Done\n')
                 else:
                     defo_int_shear = None
