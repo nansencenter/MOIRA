@@ -1158,10 +1158,10 @@ class ridgedIceClassifier(dataReader):
                     d_ridged[ft_name].extend(ft[data_int_ridge > 0].ravel())
 
                 if self.defo_training:
-                    # Collect data for flat ice
                     data_int_div[np.isnan(data_int_div)] = 0
                     data_int_shear[np.isnan(data_int_shear)] = 0
 
+                    # Collect data for flat ice
                     d_flat['div'].extend(data_int_div[data_int_flat > 0].ravel())
                     d_flat['shear'].extend(data_int_shear[data_int_flat > 0].ravel())
 
@@ -1173,10 +1173,8 @@ class ridgedIceClassifier(dataReader):
         d_df = {}
 
         if self.defo_training:
-            print('##### %s' % self.glcm_names)
             ft_names = list(self.glcm_names)
             ft_names.extend(['div', 'shear'])
-            print('##### %s' % ft_names)
             for ivar in ft_names:
                 d_df[ivar] = list(d_ridged[ivar]) + list(d_flat[ivar])
         else:
@@ -1222,12 +1220,12 @@ class ridgedIceClassifier(dataReader):
         # Model Accuracy, how often is the classifier correct?
         print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
 
-    def classify_data(self, glcm_file, defo_file=None, roi=None):
+    def classify_data(self, glcm_file_path, defo_file_path=None, roi=None):
         '''
         Classify SAR image using Random Forest classifier
         '''
 
-        glcm_file = self.read_nc(glcm_file)
+        glcm_file = self.read_nc(glcm_file_path)
         num_rows, num_columns = glcm_file['data'][list(glcm_file['data'].keys())[0]].shape
 
         classified_data = np.zeros((num_rows, num_columns))
@@ -1244,6 +1242,22 @@ class ridgedIceClassifier(dataReader):
         # r_min, r_max = 0, classified_data.shape[0]
         # c_min, c_max = 0, classified_data.shape[1]
 
+        if defo_file_path:
+            r = Resampler(defo_file_path, glcm_file_path)
+
+            data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                        r.f_target['lats'],
+                                        r.f_source['data']['ice_shear'], method='gauss',
+                                        radius_of_influence=500000)
+
+            data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                      r.f_target['lats'], r.f_source['data']['ice_divergence'],
+                                      method='gauss',
+                                      radius_of_influence=500000)
+
+            data_int_shear[np.isnan(data_int_shear)] = 0
+            data_int_div[np.isnan(data_int_div)] = 0
+
         # Classification
         start = time.time()
         for row in range(r_min, r_max):
@@ -1254,15 +1268,15 @@ class ridgedIceClassifier(dataReader):
                 for i_ft in self.glcm_names:
                     test_sample.append(glcm_file['data'][i_ft][row, column])
 
-                if defo_file:
-                    for defo_ft in self.defo_names:
-                        test_sample.append(defo_file['data'][defo_ft][row, column])
+                if defo_file_path:
+                    test_sample.append(data_int_div[row, column])
+                    test_sample.append(data_int_shear[row, column])
 
                 y_pred = self.classifier.predict([test_sample])
                 classified_data[row, column] = y_pred
 
         end = time.time()
-        print('\Done')
+        print('\nDone')
         print('\nClassified in %s minutes' % ((end - start) / 60.))
         plt.clf()
         plt.imshow(classified_data[r_min:r_max, c_min:c_max], interpolation='nearest', cmap='jet')
