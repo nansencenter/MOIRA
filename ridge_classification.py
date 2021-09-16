@@ -897,7 +897,8 @@ class Resampler:
 
         return res
 
-    def resample(self, orig_lons, orig_lats, targ_lons, targ_lats, data, method='gauss', radius_of_influence=500000):
+    def resample(self, orig_lons, orig_lats, targ_lons, targ_lats, data, method='gauss',
+                 radius_of_influence=500000, neighbours=50, sigmas=50000, nprocs=10):
         '''
         Resampling data
         '''
@@ -909,8 +910,9 @@ class Resampler:
 
         if method == 'gauss':
             data_int = pyresample.kd_tree.resample_gauss(orig_def, data.ravel(), targ_def,
-                                                         radius_of_influence=radius_of_influence, neighbours=100,
-                                                         sigmas=250000, fill_value=None)
+                                                         radius_of_influence=radius_of_influence,
+                                                         neighbours=neighbours,
+                                                         sigmas=sigmas, fill_value=None, nprocs=nprocs)
         if method == 'nearest':
             data_int = pyresample.kd_tree.resample_nearest(orig_def, data.ravel(), targ_def,
                                                            radius_of_influence=radius_of_influence, fill_value=None)
@@ -1132,11 +1134,13 @@ class ridgedIceClassifier(dataReader):
                     r = Resampler(defo_file, glcm_file)
                     data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                                 r.f_target['lats'],
-                                                r.f_source['data']['ice_shear'], method='nearest', radius_of_influence=500000)
+                                                r.f_source['data']['ice_shear'],
+                                                method='nearest', radius_of_influence=5000)
 
+                    #r = Resampler(defo_file, glcm_file)
                     data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
-                                              r.f_target['lats'],
-                                              r.f_source['data']['ice_divergence'], method='nearest', radius_of_influence=500000)
+                                              r.f_target['lats'], r.f_source['data']['ice_divergence'],
+                                              method='nearest', radius_of_influence=5000)
                     print(f'Done\n')
                 else:
                     defo_int_shear = None
@@ -1249,12 +1253,12 @@ class ridgedIceClassifier(dataReader):
                                         r.f_target['lats'],
                                         r.f_source['data']['ice_shear'],
                                         method='nearest',
-                                        radius_of_influence=500000)
+                                        radius_of_influence=50000)
 
             data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                       r.f_target['lats'], r.f_source['data']['ice_divergence'],
                                       method='nearest',
-                                      radius_of_influence=500000)
+                                      radius_of_influence=50000)
 
             data_int_shear[np.isnan(data_int_shear)] = 0
             data_int_div[np.isnan(data_int_div)] = 0
