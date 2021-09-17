@@ -122,8 +122,9 @@ class SarImage:
 
         # Compute 2d arrays of lat lon
         for i, idx_line in enumerate(range(0, rows)):
+            sys.stdout.write('\r%s of %s' % (i, rows))
+            sys.stdout.flush()
             for j, idx_col in enumerate(range(0, columns)):
-
                 # Convert x and y to lon lat
                 xx1 = geotransform[0] + idx_col * pixelWidth
                 yy1 = geotransform[3] + idx_line * pixelHeight
@@ -615,7 +616,7 @@ class SarTextures(SarImage):
         else:
             print('\nGetting lats lons...\n')
             self.getLatsLons()
-            print('Done.\n')
+            print('\nDone.\n')
 
         self.glcm_features['lats'] = self.lats[0:-self.ws + 1, 0:-self.ws + 1][::self.stp, ::self.stp]
         self.glcm_features['lons'] = self.lons[0:-self.ws + 1, 0:-self.ws + 1][::self.stp, ::self.stp]
@@ -1125,6 +1126,13 @@ class ridgedIceClassifier(dataReader):
                                            r.f_target['lats'],
                                            r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
                 print(f'Done\n')
+
+                if flat_file == ridge_file:
+                    print('\nWarning: Flat file is the same as ridge file!\nInverting flat data...')
+                    data_int_flat[data_int_flat == 0] = -999
+                    data_int_flat[data_int_flat > 0] = 0
+                    data_int_flat[data_int_flat == -999] = 1
+                    print('Done.\n')
 
                 if self.defo_training:
                     defo_file = dt_files[3]
