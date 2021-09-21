@@ -916,7 +916,8 @@ class Resampler:
                                                          sigmas=sigmas, fill_value=None, nprocs=nprocs)
         if method == 'nearest':
             data_int = pyresample.kd_tree.resample_nearest(orig_def, data.ravel(), targ_def,
-                                                           radius_of_influence=radius_of_influence, fill_value=None)
+                                                           radius_of_influence=radius_of_influence,
+                                                           epsilon=0.5, fill_value=None)
 
         return data_int.reshape(xsize, ysize)
 
