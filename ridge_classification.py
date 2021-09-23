@@ -638,14 +638,17 @@ class SarTextures(SarImage):
             self.glcm_features[iband] = {}
 
             # !TODO: Calculate texture features from median filtered data
-            print('\nMedian filtering...\n')
-            texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
-            print('\nDone\n')
+            #print('\nMedian filtering...\n')
+            #texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
+            #print('\nDone\n')
+
+            texFts = self.getTextureFeatures(self.norm_data[iband])
 
             # Adding GLCM data
             for i in range(len(texFts[:, 0, 0])):
                 self.glcm_features[iband][self.names_glcm[i + 1]] = {'data': texFts[i, :, :], 'scale_factor': 1.,
                                                                      'units': ''}
+                plt.imshow(texFts[i, :, :])
 
         end = time.time()
 
@@ -1118,14 +1121,14 @@ class ridgedIceClassifier(dataReader):
 
                 data_int_ridge = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                             r.f_target['lats'],
-                                            r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
+                                            r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
                 print(f'Done\n')
 
                 print(f'\nInterpolating manual Flat data \n{flat_file} \nto \n{glcm_file}...\n')
                 r = Resampler(flat_file, glcm_file)
                 data_int_flat = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                            r.f_target['lats'],
-                                           r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
+                                           r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
                 print(f'Done\n')
 
                 if flat_file == ridge_file:
@@ -1144,12 +1147,12 @@ class ridgedIceClassifier(dataReader):
                     data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                                 r.f_target['lats'],
                                                 r.f_source['data']['ice_shear'],
-                                                method='nearest', radius_of_influence=5000)
+                                                method='nearest', radius_of_influence=50000)
 
                     #r = Resampler(defo_file, glcm_file)
                     data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                               r.f_target['lats'], r.f_source['data']['ice_divergence'],
-                                              method='nearest', radius_of_influence=5000)
+                                              method='nearest', radius_of_influence=50000)
                     print(f'Done\n')
                 else:
                     defo_int_shear = None
@@ -1218,7 +1221,7 @@ class ridgedIceClassifier(dataReader):
         y = self.train_data['ice_class']  # Labels
 
         # Split dataset into training set and test set
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)  # 70% training and XX% test
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)  # 70% training and XX% test
 
         # Create a Gaussian Classifier
         clf = RandomForestClassifier(n_estimators=1000)
