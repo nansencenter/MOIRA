@@ -300,6 +300,7 @@ class SarImage:
 
                     if self.bbox:
                         print(f'\nCropping data {self.bbox}')
+
                         ds_warp2 = gdal.Warp(out_fname, tmp_ds, format="GTiff", dstSRS="EPSG:%s" % t_srs,
                                              xRes=res, yRes=res, multithread=True, callback=clb,
                                              outputBoundsSRS='EPSG:4326',
@@ -980,7 +981,9 @@ class ridgedIceClassifier(dataReader):
     Train and classify ridged/no ridged ice
     '''
 
-    def __init__(self, glcm_filelist, ridges_filelist, flat_filelist, defo_filelist, defo_training=True):
+    def __init__(self, glcm_filelist, ridges_filelist, flat_filelist, defo_filelist,
+                 s0_filelist, defo_training=True):
+
         # Feature namelist
         self.glcm_names = ['Angular Second Moment',
                            'Contrast',
@@ -996,25 +999,36 @@ class ridgedIceClassifier(dataReader):
                            'Information Measures of Correlation',
                            'Maximal Correlation Coefficient']
 
-        self.defo_training = defo_training
         self.glcm_filelist = glcm_filelist
         self.ridges_filelist = ridges_filelist
         self.flat_filelist = flat_filelist
         self.defo_filelist = defo_filelist
+        self.s0_filelist = s0_filelist
+        self.defo_training = defo_training
 
         self.glcm_unique_datetimes = self.get_unq_dt_from_files(self.glcm_filelist, 'GLCM')
         self.ridges_unique_datetimes = self.get_unq_dt_from_files(self.ridges_filelist, 'Ridged ice')
         self.flat_unique_datetimes = self.get_unq_dt_from_files(self.flat_filelist, 'Flat ice')
         self.defo_unique_datetimes = self.get_unq_dt_from_files(self.defo_filelist, 'Ice deformation')
+        self.s0_unique_datetimes = self.get_unq_dt_from_files(self.s0_filelist, 'sigma zero')
 
-        if defo_training:
-            self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
-                                                          self.flat_unique_datetimes, self.defo_unique_datetimes])
-            self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.defo_filelist)
+        if glcm_filelist is not None:
+            if defo_training:
+                self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
+                                                              self.flat_unique_datetimes, self.defo_unique_datetimes,
+                                                              self.s0_unique_datetimes])
+                self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.defo_filelist,
+                                    self.s0_filelist)
+            else:
+                self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
+                                                              self.flat_unique_datetimes,
+                                                              self.s0_unique_datetimes])
+                self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.s0_filelist)
         else:
-            self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
-                                                          self.flat_unique_datetimes])
-            self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist)
+            # Only s0 training
+            self.matched_datetimes = self.get_matched_dt([self.ridges_unique_datetimes,
+                                                          self.flat_unique_datetimes,
+                                                          self.s0_unique_datetimes])
 
     @staticmethod
     def get_unq_dt_from_files(file_list, name):
@@ -1082,9 +1096,10 @@ class ridgedIceClassifier(dataReader):
         d_ridged = {}
 
         # Form dictonary for results
-        for ft_name in self.glcm_names:
-            d_flat.setdefault(ft_name, [])
-            d_ridged.setdefault(ft_name, [])
+        if self.glcm_filelist is not None:
+            for ft_name in self.glcm_names:
+                d_flat.setdefault(ft_name, [])
+                d_ridged.setdefault(ft_name, [])
 
         if self.defo_training:
             # Add divergence and shear
@@ -1093,6 +1108,10 @@ class ridgedIceClassifier(dataReader):
 
             d_flat.setdefault('shear', [])
             d_ridged.setdefault('shear', [])
+
+        if self.s0_filelist is not None:
+            d_flat.setdefault('s0', [])
+            d_ridged.setdefault('s0', [])
 
         if self.matched_datetimes:
             for idt in self.matched_datetimes:
@@ -1115,7 +1134,22 @@ class ridgedIceClassifier(dataReader):
                 ridge_file = dt_files[1]
                 flat_file = dt_files[2]
 
+                if self.defo_training:
+                    defo_file = dt_files[3]
+                    s0_file = dt_files[4]
+                else:
+                    s0_file = dt_files[3]
 
+                # Interpolate sigma zero data
+                print(f'\nInterpolating s0 data \n{s0_file} \nto \n{glcm_file}...\n')
+                r = Resampler(s0_file, glcm_file)
+
+                data_int_s0 = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                         r.f_target['lats'], r.f_source['data']['s0'],
+                                         method='nearest', radius_of_influence=500000)
+                print(f'Done\n')
+
+                # Manual charts
                 print(f'\nInterpolating manual Ridge data \n{ridge_file} \nto \n{glcm_file}...\n')
                 r = Resampler(ridge_file, glcm_file)
 
@@ -1139,7 +1173,7 @@ class ridgedIceClassifier(dataReader):
                     print('Done.\n')
 
                 if self.defo_training:
-                    defo_file = dt_files[3]
+                    #defo_file = dt_files[3]
                     r = Resampler(defo_file, glcm_file)
 
                     print(f'\nInterpolating Deformation data \n{defo_file} \nto \n{glcm_file}...\n')
@@ -1147,12 +1181,12 @@ class ridgedIceClassifier(dataReader):
                     data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                                 r.f_target['lats'],
                                                 r.f_source['data']['ice_shear'],
-                                                method='nearest', radius_of_influence=50000)
+                                                method='nearest', radius_of_influence=5000)
 
                     #r = Resampler(defo_file, glcm_file)
                     data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                               r.f_target['lats'], r.f_source['data']['ice_divergence'],
-                                              method='nearest', radius_of_influence=50000)
+                                              method='nearest', radius_of_influence=5000)
                     print(f'Done\n')
                 else:
                     defo_int_shear = None
@@ -1185,16 +1219,26 @@ class ridgedIceClassifier(dataReader):
                     d_ridged['div'].extend(data_int_div[data_int_ridge > 0].ravel())
                     d_ridged['shear'].extend(data_int_shear[data_int_ridge > 0].ravel())
 
+                if self.s0_filelist is not None:
+                    # Collect data for ridged ice
+                    d_ridged['s0'].extend(data_int_s0[data_int_ridge > 0].ravel())
+                    d_flat['s0'].extend(data_int_s0[data_int_flat > 0].ravel())
+
         print('\nConverting data to Pandas data frame...\n')
         d_df = {}
 
         if self.defo_training:
             ft_names = list(self.glcm_names)
-            ft_names.extend(['div', 'shear'])
+            ft_names.extend(['div', 'shear', 's0'])
             for ivar in ft_names:
                 d_df[ivar] = list(d_ridged[ivar]) + list(d_flat[ivar])
         else:
-            for ivar in self.glcm_names:
+            ft_names = list(self.glcm_names)
+
+            if self.s0_filelist is not None:
+                ft_names.extend(['s0'])
+
+            for ivar in ft_names:
                 d_df[ivar] = list(d_ridged[ivar]) + list(d_flat[ivar])
 
         # Define class of ice for the each set of features
@@ -1221,7 +1265,7 @@ class ridgedIceClassifier(dataReader):
         y = self.train_data['ice_class']  # Labels
 
         # Split dataset into training set and test set
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)  # 70% training and XX% test
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)  # 70% training and XX% test
 
         # Create a Gaussian Classifier
         clf = RandomForestClassifier(n_estimators=1000)
@@ -1236,7 +1280,7 @@ class ridgedIceClassifier(dataReader):
         # Model Accuracy, how often is the classifier correct?
         print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
 
-    def classify_data(self, glcm_file_path, defo_file_path=None, roi=None):
+    def classify_data(self, glcm_file_path, defo_file_path=None, s0_file_path=None, roi=None):
         '''
         Classify SAR image using Random Forest classifier
         '''
@@ -1275,6 +1319,14 @@ class ridgedIceClassifier(dataReader):
             data_int_shear[np.isnan(data_int_shear)] = 0
             data_int_div[np.isnan(data_int_div)] = 0
 
+        if s0_file_path:
+            r = Resampler(s0_file_path, glcm_file_path)
+
+            data_int_s0 = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                        r.f_target['lats'],
+                                        r.f_source['data']['s0'],
+                                        method='nearest',
+                                        radius_of_influence=50000)
         # Classification
         start = time.time()
         for row in range(r_min, r_max):
@@ -1288,6 +1340,9 @@ class ridgedIceClassifier(dataReader):
                 if defo_file_path:
                     test_sample.append(data_int_div[row, column])
                     test_sample.append(data_int_shear[row, column])
+
+                if s0_file_path:
+                    test_sample.append(data_int_s0[row, column])
 
                 y_pred = self.classifier.predict([test_sample])
                 classified_data[row, column] = y_pred
