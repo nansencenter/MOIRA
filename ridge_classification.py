@@ -120,6 +120,14 @@ class SarImage:
         # 2D indexes for all elements
         idxs_2d = []
 
+        #! TODO: replace with this
+        # Generate Longitude and Latitude array
+        #xx1 = geotransform[0] + np.arange(0, rows) * pixelWidth
+        #yy1 = geotransform[3] + np.arange(0, columns) * pixelHeight
+
+        #lon_2d, lat_2d = transform.TransformPoint(geotransform[0] + np.arange(0, rows) * pixelWidth,
+        #                                  geotransform[3] + np.arange(0, columns) * pixelHeight)
+
         # Compute 2d arrays of lat lon
         for i, idx_line in enumerate(range(0, rows)):
             sys.stdout.write('\r%s of %s' % (i, rows))
@@ -193,7 +201,7 @@ class SarImage:
         B[np.isnan(B)] = np.interp(x, xp, fp)
         return B
 
-    def radiometric_calibration(self, input_tiff_path, calibration_xml_path):
+    def radiometric_calibration(self, input_tiff_path, calibration_xml_path, backscatter_coeff='sigmaNought'):
         '''
         Apply calibration values to DN
         '''
@@ -202,7 +210,7 @@ class SarImage:
         measurement_file_array = np.array(measurement_file.GetRasterBand(1).ReadAsArray().astype(np.float32))
 
         radiometric_coefficients_array = self.get_coefficients_array(calibration_xml_path, 'calibrationVectorList',
-                                                                     'sigmaNought', measurement_file.RasterXSize,
+                                                                     backscatter_coeff, measurement_file.RasterXSize,
                                                                      measurement_file.RasterYSize)
         print('Radiometric calibration...')
         tiff_name = os.path.basename(input_tiff_path)
@@ -210,7 +218,7 @@ class SarImage:
                     radiometric_coefficients_array * radiometric_coefficients_array)
         # save_array_as_geotiff_gcp_mode(calibrated_array, output_tiff_path, measurement_file)
 
-    def calibrate_project(self, t_srs, res, mask=False, write_file=True, out_path='.'):
+    def calibrate_project(self, t_srs, res, mask=False, write_file=True, out_path='.', backscatter_coeff='sigmaNought'):
         '''
         Project raw S1 GeoTIFF file
         '''
@@ -246,7 +254,7 @@ class SarImage:
 
             if calib_f:
                 print('\nStart calibration...')
-                self.radiometric_calibration(tiffPath, calib_f)
+                self.radiometric_calibration(tiffPath, calib_f, backscatter_coeff)
                 print('Done.\n')
 
                 print('\nOpening raw Geotiff {}'.format(tiffPath))
