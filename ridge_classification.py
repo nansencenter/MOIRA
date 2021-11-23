@@ -41,6 +41,8 @@ import functools
 import pyresample
 from datetime import datetime
 import re
+from skimage.filters.rank import otsu
+from skimage.morphology import disk
 
 # Import train_test_split function
 from sklearn.model_selection import train_test_split
@@ -48,7 +50,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 #Import scikit-learn metrics module for accuracy calculation
 from sklearn import metrics
-from skimage import filters
+from sklearn.impute import SimpleImputer
 
 class SarImage:
     '''
@@ -609,7 +611,7 @@ class SarTextures(SarImage):
         # reshape matrix and make images to be on the first dimension
         return np.moveaxis(harImage, 2, 0)
 
-    def calcTexFt(self):
+    def calcTexFt(self, speckle_supression=True):
         '''
         Calculate GLCM features
         '''
@@ -646,12 +648,11 @@ class SarTextures(SarImage):
             print(f'{iband}\n')
             self.glcm_features[iband] = {}
 
-            # !TODO: Calculate texture features from median filtered data
-            #print('\nMedian filtering...\n')
-            #texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
-            #print('\nDone\n')
-
-            texFts = self.getTextureFeatures(self.norm_data[iband])
+            if speckle_supression:
+                print('\nSpeckle supression %s...\n')
+                texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
+            else:
+                texFts = self.getTextureFeatures(self.norm_data[iband])
 
             # Adding GLCM data
             for i in range(len(texFts[:, 0, 0])):
@@ -1294,6 +1295,7 @@ class ridgedIceClassifier(dataReader):
         '''
 
         glcm_file = self.read_nc(glcm_file_path)
+
         num_rows, num_columns = glcm_file['data'][list(glcm_file['data'].keys())[0]].shape
 
         classified_data = np.zeros((num_rows, num_columns))
@@ -1343,7 +1345,13 @@ class ridgedIceClassifier(dataReader):
                 test_sample = []
 
                 for i_ft in self.glcm_names:
-                    test_sample.append(glcm_file['data'][i_ft][row, column])
+                    temp_data = glcm_file['data'][i_ft][row, column]
+
+                    if not np.isnan(temp_data):
+                        test_sample.append(temp_data)
+                    else:
+                        print('nan! Appending 0')
+                        test_sample.append(0)
 
                 if defo_file_path:
                     test_sample.append(data_int_div[row, column])
