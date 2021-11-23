@@ -51,6 +51,8 @@ from sklearn.ensemble import RandomForestClassifier
 #Import scikit-learn metrics module for accuracy calculation
 from sklearn import metrics
 from sklearn.impute import SimpleImputer
+from skimage import data, segmentation, feature, future
+from functools import partial
 
 class SarImage:
     '''
@@ -445,7 +447,7 @@ class SarTextures(SarImage):
     Class for SAR textural features computation
     '''
 
-    def __init__(self, zipPath, ws, stp, threads, bbox):
+    def __init__(self, zipPath, ws=50, stp=5, threads=10, bbox=None):
         super().__init__(zipPath)
         self.ws = ws
         self.stp = stp
@@ -611,6 +613,63 @@ class SarTextures(SarImage):
         # reshape matrix and make images to be on the first dimension
         return np.moveaxis(harImage, 2, 0)
 
+    def getMultiscaleTextureFeatures(self, iarray):
+        ''' Local features for a single- or multi-channel nd image.
+            Intensity, gradient intensity and local structure are computed at
+            different scales thanks to Gaussian blurring.
+
+        Parameters
+        ----------
+            iarray : ndarray
+                2D input data with gray levels
+            multichannel : bool, default False
+                True if the last dimension corresponds to color channels.
+                This argument is deprecated: specify `channel_axis` instead.
+            intensity : bool, default True
+                If True, pixel intensities averaged over the different scales
+                are added to the feature set.
+            edges : bool, default True
+                If True, intensities of local gradients averaged over the different
+                scales are added to the feature set.
+            texture : bool, default True
+                If True, eigenvalues of the Hessian matrix after Gaussian blurring
+                at different scales are added to the feature set.
+            sigma_min : float, optional
+                Smallest value of the Gaussian kernel used to average local
+                neighbourhoods before extracting features.
+            sigma_max : float, optional
+                Largest value of the Gaussian kernel used to average local
+                neighbourhoods before extracting features.
+            num_sigma : int, optional
+                Number of values of the Gaussian kernel between sigma_min and sigma_max.
+                If None, sigma_min multiplied by powers of 2 are used.
+            num_workers : int or None, optional
+                The number of parallel threads to use. If set to ``None``, the full
+                set of available cores are used.
+            channel_axis : int or None, optional
+                If None, the image is assumed to be a grayscale (single channel) image.
+                Otherwise, this parameter indicates which axis of the array corresponds
+                to channels.
+                Returns
+        Returns
+        -------
+        features : np.ndarray(NUM_FT, NUM_ROWS, NUM_COLUMNS)
+            Array of shape ``image.shape + (n_features,)``. When `channel_axis` is
+            not None, all channels are concatenated along the features dimension.
+            (i.e. ``n_features == n_features_singlechannel * n_channels``)
+        '''
+
+        sigma_min = 1
+        sigma_max = 16
+        features_func = partial(feature.multiscale_basic_features,
+                                intensity=True, edges=False, texture=True,
+                                sigma_min=sigma_min, sigma_max=sigma_max,
+                                multichannel=False)
+
+        fts = features_func(iarray)
+
+        return np.moveaxis(fts, 2, 0)
+
     def calcTexFt(self, speckle_supression=True):
         '''
         Calculate GLCM features
@@ -629,8 +688,8 @@ class SarTextures(SarImage):
             self.getLatsLons()
             print('\nDone.\n')
 
-        self.glcm_features['lats'] = self.lats[0:-self.ws + 1, 0:-self.ws + 1][::self.stp, ::self.stp]
-        self.glcm_features['lons'] = self.lons[0:-self.ws + 1, 0:-self.ws + 1][::self.stp, ::self.stp]
+        self.glcm_features['lats'] = self.lats #[0:-self.ws + 1, 0:-self.ws + 1][::self.stp, ::self.stp]
+        self.glcm_features['lons'] = self.lons #[0:-self.ws + 1, 0:-self.ws + 1][::self.stp, ::self.stp]
 
         # self.smooth()
 
@@ -649,24 +708,39 @@ class SarTextures(SarImage):
             self.glcm_features[iband] = {}
 
             if speckle_supression:
-                print('\nSpeckle supression %s...\n')
-                texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
+                print('\nSpeckle supression and calculating texture features...\n')
+                #texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
+                texFts = self.getMultiscaleTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
             else:
-                texFts = self.getTextureFeatures(self.norm_data[iband])
+                print('\nCalculating texture features...\n')
+                texFts = self.getMultiscaleTextureFeatures(self.norm_data[iband])
 
             # Adding GLCM data
+            '''
             for i in range(len(texFts[:, 0, 0])):
                 self.glcm_features[iband][self.names_glcm[i + 1]] = {'data': texFts[i, :, :], 'scale_factor': 1.,
                                                                      'units': ''}
                 plt.imshow(texFts[i, :, :])
+            '''
 
+            for i in range(len(texFts[:, 0, 0])):
+                self.glcm_features[iband][str(i)] = {'data': texFts[i, :, :], 'scale_factor': 1.,
+                                                                     'units': ''}
         end = time.time()
 
-        print('\nDone in %s minutes\n' % ((end - start) / 60.))
+        print('\nDone in %.2f minutes\n' % ((end - start) / 60.))
 
     def export_netcdf(self, out_fname):
         '''
         Export results to NetCDF file
+        '''
+
+        ''' TODO: remove old
+        ks = [x for x in self.glcm_features.keys() if 's0' in x]
+        for ivar in ks:
+            out_fname_nc = '%s/%s_%s' % (os.path.dirname(out_fname), ivar, os.path.basename(out_fname))
+            super().export_netcdf(self.glcm_features['lats'], self.glcm_features['lons'],
+                                  self.glcm_features[ivar], out_fname_nc)
         '''
 
         ks = [x for x in self.glcm_features.keys() if 's0' in x]
