@@ -389,7 +389,7 @@ class SarImage:
         for iband in self.data.keys():
             arr = self.data[iband]['data']
             arr[np.isnan(arr)] = 0
-            self.norm_data['norm_%s' % iband] = (r * (arr - np.min(arr)) / np.ptp(arr)).astype(int)
+            self.norm_data['norm_%s' % iband] = arr #(r * (arr - np.min(arr)) / np.ptp(arr)).astype(int)
 
     def export_netcdf(self, lats, lons, data, out_fname):
         '''
@@ -1665,7 +1665,7 @@ class deformedIceClassifier(dataReader):
                 print(z_dim, data_glcm['data'][ft_names[0]].shape[0], data_glcm['data'][ft_names[0]].shape[1])
 
                 train_features = np.zeros((z_dim, data_glcm['data'][ft_names[0]].shape[0],
-                                           data_glcm['data'][ft_names[0]].shape[1]), dtype=np.uint8)
+                                           data_glcm['data'][ft_names[0]].shape[1]), dtype=np.float)
 
                 for iz in range(z_dim):
                     train_features[iz, :, :] = data_glcm['data'][ft_names[iz]]
@@ -1679,19 +1679,44 @@ class deformedIceClassifier(dataReader):
                 else:
                     pass
 
+                # Replace nan values with 0
+                self.features[np.isnan(self.features)] = 0.
+
                 # Move axis
                 self.features = np.moveaxis(self.features, 0, 2)
 
-    def train_rf_classifier(self):
+    def train_rf_classifier(self, bbox=None):
         '''
         Train Random Forests classifier
         '''
 
         print('\nTrain Random-Forests classifier...\n')
 
-        clf = RandomForestClassifier(n_estimators=50, n_jobs=10,
-                                     max_depth=10, max_samples=0.05)
+        self.rf = RandomForestClassifier(n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05)
 
-        self.classifier = future.fit_segmenter(self.training_labels, self.features, clf)
+        print('Train labels shape: (%s %s)' % self.training_labels.shape)
+        print('Features shape: (%s %s %s)' % self.features.shape)
+
+        if not bbox is None:
+            self.classifier = future.fit_segmenter(self.training_labels[bbox[0]:bbox[1], bbox[2]:bbox[3]],
+                                                   self.features[bbox[0]:bbox[1], bbox[2]:bbox[3], :],
+                                                   self.rf)
+        else:
+            self.classifier = future.fit_segmenter(self.training_labels, self.features, self.rf)
 
         print('Done.\n')
+
+    def detect_ice_state(self, input_features):
+        '''
+        Detect sea ice state from features
+        '''
+
+        print('\nDetecting ice state...\n')
+        print('Input features shape: (%s %s %s)' % input_features.shape)
+        print(self.classifier)
+
+        result = future.predict_segmenter(input_features, self.classifier)
+        self.result = result
+        print('Done.\n')
+
+        return result
