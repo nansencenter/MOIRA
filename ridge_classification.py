@@ -735,20 +735,11 @@ class SarTextures(SarImage):
         Export results to NetCDF file
         '''
 
-        ''' TODO: remove old
         ks = [x for x in self.glcm_features.keys() if 's0' in x]
         for ivar in ks:
             out_fname_nc = '%s/%s_%s' % (os.path.dirname(out_fname), ivar, os.path.basename(out_fname))
             super().export_netcdf(self.glcm_features['lats'], self.glcm_features['lons'],
                                   self.glcm_features[ivar], out_fname_nc)
-        '''
-
-        ks = [x for x in self.glcm_features.keys() if 's0' in x]
-        for ivar in ks:
-            out_fname_nc = '%s/%s_%s' % (os.path.dirname(out_fname), ivar, os.path.basename(out_fname))
-            super().export_netcdf(self.glcm_features['lats'], self.glcm_features['lons'],
-                                  self.glcm_features[ivar], out_fname_nc)
-
 
 class GeoTiff:
     '''
@@ -1145,7 +1136,7 @@ class ridgedIceClassifier(dataReader):
     @staticmethod
     def get_matched_dt(file_lists):
         '''
-        Get mathced date and times for file lists
+        Get matched date and time for the files
         '''
         dt_matched = []
 
@@ -1443,3 +1434,264 @@ class ridgedIceClassifier(dataReader):
         plt.clf()
         plt.imshow(classified_data[r_min:r_max, c_min:c_max], interpolation='nearest', cmap='jet')
         self.classified_data = classified_data
+
+##################################################################
+# TODO: New class for classification based on ms features
+##################################################################
+class deformedIceClassifier(dataReader):
+    '''
+    Train and classify SAR image into two classes: ridged and level ice
+    '''
+
+    def __init__(self, glcm_filelist, ridges_filelist, flat_filelist, defo_filelist,
+                 s0_filelist, defo_training=True):
+
+        self.glcm_filelist = glcm_filelist
+        self.ridges_filelist = ridges_filelist
+        self.flat_filelist = flat_filelist
+        self.defo_filelist = defo_filelist
+        self.s0_filelist = s0_filelist
+        self.defo_training = defo_training
+
+        self.glcm_unique_datetimes = self.get_unq_dt_from_files(self.glcm_filelist, 'GLCM')
+        self.ridges_unique_datetimes = self.get_unq_dt_from_files(self.ridges_filelist, 'Ridged ice')
+        self.flat_unique_datetimes = self.get_unq_dt_from_files(self.flat_filelist, 'Flat ice')
+        self.defo_unique_datetimes = self.get_unq_dt_from_files(self.defo_filelist, 'Ice deformation')
+        self.s0_unique_datetimes = self.get_unq_dt_from_files(self.s0_filelist, 'sigma zero')
+
+        if glcm_filelist is not None:
+            if defo_training:
+                self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
+                                                              self.flat_unique_datetimes, self.defo_unique_datetimes,
+                                                              self.s0_unique_datetimes])
+                self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.defo_filelist,
+                                    self.s0_filelist)
+            else:
+                self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
+                                                              self.flat_unique_datetimes,
+                                                              self.s0_unique_datetimes])
+                self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.s0_filelist)
+        else:
+            # Only s0 training
+            self.matched_datetimes = self.get_matched_dt([self.ridges_unique_datetimes,
+                                                          self.flat_unique_datetimes,
+                                                          self.s0_unique_datetimes])
+
+    @staticmethod
+    def get_unq_dt_from_files(file_list, name):
+        '''
+        Get unique date and times form list of files
+        '''
+
+        dts_str = []
+        dts = []
+        for ifile in file_list:
+            idt = re.findall(r'\d\d\d\d\d\d\d\d\w\d\d\d\d', ifile)[0]
+            dts_str.append(idt)
+
+        dts_str.sort()
+        dts_str = set(dts_str)
+        dts_str = list(dts_str)
+        dts_str.sort()
+
+        # Convert to Python date time format
+        if dts_str:
+            for idt_str in dts_str:
+                idt_str = '%s-%s-%s %s:%s' % (idt_str[0:4], idt_str[4:6], idt_str[6:8], idt_str[9:11], idt_str[11:13])
+                idt = datetime.strptime(idt_str, '%Y-%m-%d %H:%M')
+                dts.append(idt)
+            print(f'Unique dates for {name}: {dts}')
+        else:
+            print(f'No dates for {name}')
+
+        return dts
+
+    @staticmethod
+    def get_matched_dt(file_lists):
+        '''
+        Get matched date and time for the files
+        '''
+        dt_matched = []
+
+        for idt in file_lists[0]:
+            flag = 1
+            for il in file_lists[1:]:
+                if not idt in il:
+                    flag = 0
+                else:
+                    pass
+
+            if flag == 1:
+                dt_matched.append(idt)
+
+            else:
+                pass
+
+        print(f'\nMatched dates for all file lists: {dt_matched}\n')
+
+        return dt_matched
+
+    def collocate_data(self, *args):
+        '''
+        Collocate all data from file lists
+        '''
+
+        # Flat ice GLCM features
+        d_flat = {}
+
+        # Ridged ice GLCM features
+        d_ridged = {}
+
+        if self.defo_training:
+            # Add divergence and shear
+            d_flat.setdefault('div', [])
+            d_ridged.setdefault('div', [])
+
+            d_flat.setdefault('shear', [])
+            d_ridged.setdefault('shear', [])
+
+        if self.s0_filelist is not None:
+            d_flat.setdefault('s0', [])
+            d_ridged.setdefault('s0', [])
+
+        if self.matched_datetimes:
+            for idt in self.matched_datetimes:
+                # print(f'\nData collocation for {idt}\n')
+                date_time = idt.strftime('%Y%m%dT%H%M')
+
+                dt_files = []
+
+                for x in args:
+                    for ifile in x:
+                        if date_time in ifile:
+                            dt_files.append(ifile)
+
+                print('\nDone.\n')
+
+                print(f'Files for {idt}:\n {dt_files}\n Start collocation...')
+
+                # Resample data onto one grid
+                glcm_file = dt_files[0]
+                ridge_file = dt_files[1]
+                flat_file = dt_files[2]
+
+                if self.defo_training:
+                    defo_file = dt_files[3]
+                    s0_file = dt_files[4]
+                else:
+                    s0_file = dt_files[3]
+
+                # Interpolate sigma zero data
+                print(f'\nInterpolating s0 data \n{s0_file} \nto \n{glcm_file}...\n')
+                r = Resampler(s0_file, glcm_file)
+
+                data_int_s0 = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                         r.f_target['lats'], r.f_source['data']['s0'],
+                                         method='nearest', radius_of_influence=500000)
+                print(f'Done\n')
+
+                # Manual charts
+                print(f'\nInterpolating manual Ridge data \n{ridge_file} \nto \n{glcm_file}...\n')
+                r = Resampler(ridge_file, glcm_file)
+
+                data_int_ridge = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                            r.f_target['lats'],
+                                            r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
+                print(f'Done\n')
+
+                print(f'\nInterpolating manual Flat data \n{flat_file} \nto \n{glcm_file}...\n')
+                r = Resampler(flat_file, glcm_file)
+                data_int_flat = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                           r.f_target['lats'],
+                                           r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
+                print(f'Done\n')
+
+                if flat_file == ridge_file:
+                    print('\nWarning: Level ice file is the same as ridge file!\nInverting flat data...')
+                    data_int_flat[data_int_flat == 0] = -999
+                    data_int_flat[data_int_flat > 0] = 0
+                    data_int_flat[data_int_flat == -999] = 1
+                    print('Done.\n')
+                else:
+                    pass
+
+                if self.defo_training:
+                    #defo_file = dt_files[3]
+                    r = Resampler(defo_file, glcm_file)
+
+                    print(f'\nInterpolating Deformation data \n{defo_file} \nto \n{glcm_file}...\n')
+                    r = Resampler(defo_file, glcm_file)
+                    data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                                r.f_target['lats'],
+                                                r.f_source['data']['ice_shear'],
+                                                method='nearest', radius_of_influence=5000)
+
+                    #r = Resampler(defo_file, glcm_file)
+                    data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                              r.f_target['lats'], r.f_source['data']['ice_divergence'],
+                                              method='nearest', radius_of_influence=5000)
+                    print(f'Done\n')
+                else:
+                    defo_int_shear = None
+                    defo_int_div = None
+
+                ######################################################
+                # Collect training data
+                ######################################################
+
+                # Open data with texture features
+                print('\nReading netcdf file with texture features...\n')
+                data_glcm = self.read_nc(glcm_file)
+
+                # Get feature names
+                ft_names = [str(ft_name) for ft_name in range(len(data_glcm['data'].keys()))]
+                print(ft_names)
+                print('Done.\n')
+
+                # Initialize matrix with training labels
+                training_labels = np.zeros(data_glcm['data'][ft_names[0]].shape, dtype=np.uint8)
+                training_labels[data_int_ridge > 0] = 1
+                training_labels[data_int_flat > 0] = 2
+
+                # Train labels
+                self.training_labels = training_labels
+
+                # Train features
+                if self.defo_training:
+                    z_dim = len(data_glcm['data'].keys()) + 2
+                else:
+                    z_dim = len(data_glcm['data'].keys())
+
+                print(z_dim, data_glcm['data'][ft_names[0]].shape[0], data_glcm['data'][ft_names[0]].shape[1])
+
+                train_features = np.zeros((z_dim, data_glcm['data'][ft_names[0]].shape[0],
+                                           data_glcm['data'][ft_names[0]].shape[1]), dtype=np.uint8)
+
+                for iz in range(z_dim):
+                    train_features[iz, :, :] = data_glcm['data'][ft_names[iz]]
+
+                self.features = train_features
+
+                # Add deformation data if defo training
+                if self.defo_training:
+                    self.features[z_dim, :, :] = data_int_div
+                    self.features[z_dim+1, :, :] = data_int_shear
+                else:
+                    pass
+
+                # Move axis
+                self.features = np.moveaxis(self.features, 0, 2)
+
+    def train_rf_classifier(self):
+        '''
+        Train Random Forests classifier
+        '''
+
+        print('\nTrain Random-Forests classifier...\n')
+
+        clf = RandomForestClassifier(n_estimators=50, n_jobs=10,
+                                     max_depth=10, max_samples=0.05)
+
+        self.classifier = future.fit_segmenter(self.training_labels, self.features, clf)
+
+        print('Done.\n')
