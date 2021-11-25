@@ -758,7 +758,10 @@ class GeoTiff:
         '''
 
         ds = gdal.Open(self.name)
-        rows, columns = self.data.shape[0], self.data.shape[1]
+        if len(self.data.shape) == 2:
+            rows, columns = self.data.shape[0], self.data.shape[1]
+        else:
+            rows, columns = self.data.shape[1], self.data.shape[2]
 
         lon_2d = np.empty((rows, columns))
         lon_2d[:] = np.nan
@@ -1457,7 +1460,9 @@ class deformedIceClassifier(dataReader):
         self.ridges_unique_datetimes = self.get_unq_dt_from_files(self.ridges_filelist, 'Ridged ice')
         self.flat_unique_datetimes = self.get_unq_dt_from_files(self.flat_filelist, 'Flat ice')
         self.defo_unique_datetimes = self.get_unq_dt_from_files(self.defo_filelist, 'Ice deformation')
-        self.s0_unique_datetimes = self.get_unq_dt_from_files(self.s0_filelist, 'sigma zero')
+
+        if self.s0_filelist is not None:
+            self.s0_unique_datetimes = self.get_unq_dt_from_files(self.s0_filelist, 'sigma zero')
 
         if glcm_filelist is not None:
             if defo_training:
@@ -1467,10 +1472,19 @@ class deformedIceClassifier(dataReader):
                 self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.defo_filelist,
                                     self.s0_filelist)
             else:
-                self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
-                                                              self.flat_unique_datetimes,
-                                                              self.s0_unique_datetimes])
-                self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.s0_filelist)
+                if self.s0_filelist is not None:
+                    self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
+                                                                  self.flat_unique_datetimes,
+                                                                  self.s0_unique_datetimes])
+                else:
+                    self.matched_datetimes = self.get_matched_dt(
+                        [self.glcm_unique_datetimes, self.ridges_unique_datetimes,
+                         self.flat_unique_datetimes])
+
+                if self.s0_filelist is not None:
+                    self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.s0_filelist)
+                else:
+                    self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist)
         else:
             # Only s0 training
             self.matched_datetimes = self.get_matched_dt([self.ridges_unique_datetimes,
@@ -1577,17 +1591,20 @@ class deformedIceClassifier(dataReader):
 
                 if self.defo_training:
                     defo_file = dt_files[3]
-                    s0_file = dt_files[4]
+                    if not self.s0_filelist is None:
+                        s0_file = dt_files[4]
                 else:
-                    s0_file = dt_files[3]
+                    if not self.s0_filelist is None:
+                        s0_file = dt_files[3]
 
                 # Interpolate sigma zero data
-                print(f'\nInterpolating s0 data \n{s0_file} \nto \n{glcm_file}...\n')
-                r = Resampler(s0_file, glcm_file)
+                if self.s0_filelist is not None:
+                    print(f'\nInterpolating s0 data \n{s0_file} \nto \n{glcm_file}...\n')
+                    r = Resampler(s0_file, glcm_file)
 
-                data_int_s0 = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
-                                         r.f_target['lats'], r.f_source['data']['s0'],
-                                         method='nearest', radius_of_influence=500000)
+                    data_int_s0 = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                             r.f_target['lats'], r.f_source['data']['s0'],
+                                             method='gauss', radius_of_influence=500000)
                 print(f'Done\n')
 
                 # Manual charts
@@ -1596,14 +1613,14 @@ class deformedIceClassifier(dataReader):
 
                 data_int_ridge = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                             r.f_target['lats'],
-                                            r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
+                                            r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
                 print(f'Done\n')
 
                 print(f'\nInterpolating manual Flat data \n{flat_file} \nto \n{glcm_file}...\n')
                 r = Resampler(flat_file, glcm_file)
                 data_int_flat = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                            r.f_target['lats'],
-                                           r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
+                                           r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
                 print(f'Done\n')
 
                 if flat_file == ridge_file:
