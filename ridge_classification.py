@@ -1667,8 +1667,8 @@ class deformedIceClassifier(dataReader):
 
                 # Initialize matrix with training labels
                 training_labels = np.zeros(data_glcm['data'][ft_names[0]].shape, dtype=np.uint8)
-                training_labels[data_int_ridge > 0] = 1
-                training_labels[data_int_flat > 0] = 2
+                training_labels[data_int_ridge > 0] = 2
+                training_labels[data_int_flat > 0] = 1
 
                 # Train labels
                 self.training_labels = training_labels
