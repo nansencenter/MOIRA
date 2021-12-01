@@ -998,7 +998,7 @@ class Resampler:
         if method == 'nearest':
             data_int = pyresample.kd_tree.resample_nearest(orig_def, data.ravel(), targ_def,
                                                            radius_of_influence=radius_of_influence,
-                                                           epsilon=0.5, fill_value=None)
+                                                           epsilon=0.5, fill_value=None, nprocs=nprocs)
 
         return data_int.reshape(xsize, ysize)
 
@@ -1604,7 +1604,7 @@ class deformedIceClassifier(dataReader):
 
                     data_int_s0 = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                              r.f_target['lats'], r.f_source['data']['s0'],
-                                             method='gauss', radius_of_influence=500000)
+                                             method='nearest', radius_of_influence=500000)
                 print(f'Done\n')
 
                 # Manual charts
@@ -1620,7 +1620,7 @@ class deformedIceClassifier(dataReader):
                 r = Resampler(flat_file, glcm_file)
                 data_int_flat = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                            r.f_target['lats'],
-                                           r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
+                                           r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
                 print(f'Done\n')
 
                 if flat_file == ridge_file:
@@ -1702,14 +1702,15 @@ class deformedIceClassifier(dataReader):
                 # Move axis
                 self.features = np.moveaxis(self.features, 0, 2)
 
-    def train_rf_classifier(self, bbox=None):
+    def train_rf_classifier(self, bbox=None, n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05):
         '''
         Train Random Forests classifier
         '''
 
         print('\nTrain Random-Forests classifier...\n')
 
-        self.rf = RandomForestClassifier(n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05)
+        self.rf = RandomForestClassifier(n_estimators=n_estimators, n_jobs=n_jobs,
+                                         max_depth=max_depth, max_samples=max_samples)
 
         print('Train labels shape: (%s %s)' % self.training_labels.shape)
         print('Features shape: (%s %s %s)' % self.features.shape)
