@@ -1438,16 +1438,16 @@ class ridgedIceClassifier(dataReader):
         plt.imshow(classified_data[r_min:r_max, c_min:c_max], interpolation='nearest', cmap='jet')
         self.classified_data = classified_data
 
-##################################################################
-# TODO: New class for classification based on ms features
-##################################################################
+######################################################################
+# TODO: New class for classification based on multi-scale features
+######################################################################
 class deformedIceClassifier(dataReader):
     '''
     Train and classify SAR image into two classes: ridged and level ice
     '''
 
     def __init__(self, glcm_filelist, ridges_filelist, flat_filelist, defo_filelist,
-                 s0_filelist, defo_training=True):
+                 s0_filelist, defo_training=False):
 
         self.glcm_filelist = glcm_filelist
         self.ridges_filelist = ridges_filelist
@@ -1456,40 +1456,64 @@ class deformedIceClassifier(dataReader):
         self.s0_filelist = s0_filelist
         self.defo_training = defo_training
 
+        # A dictonary with dates and list of files
+        dates_and_files = {}
+
         self.glcm_unique_datetimes = self.get_unq_dt_from_files(self.glcm_filelist, 'GLCM')
         self.ridges_unique_datetimes = self.get_unq_dt_from_files(self.ridges_filelist, 'Ridged ice')
         self.flat_unique_datetimes = self.get_unq_dt_from_files(self.flat_filelist, 'Flat ice')
-        self.defo_unique_datetimes = self.get_unq_dt_from_files(self.defo_filelist, 'Ice deformation')
 
-        if self.s0_filelist is not None:
-            self.s0_unique_datetimes = self.get_unq_dt_from_files(self.s0_filelist, 'sigma zero')
+        if self.s0_filelist is not None and self.s0_filelist != []:
+            self.s0_unique_datetimes = self.get_unq_dt_from_files(self.s0_filelist, 'Sigma nought')
+
+        if self.defo_filelist is not None and self.defo_filelist != []:
+            self.defo_unique_datetimes = self.get_unq_dt_from_files(self.defo_filelist, 'Ice deformation')
 
         if glcm_filelist is not None:
             if defo_training:
                 self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
-                                                              self.flat_unique_datetimes, self.defo_unique_datetimes,
-                                                              self.s0_unique_datetimes])
-                self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.defo_filelist,
-                                    self.s0_filelist)
+                                                              self.flat_unique_datetimes, self.defo_unique_datetimes])
+                #self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.defo_filelist)
             else:
-                if self.s0_filelist is not None:
-                    self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
-                                                                  self.flat_unique_datetimes,
-                                                                  self.s0_unique_datetimes])
-                else:
-                    self.matched_datetimes = self.get_matched_dt(
-                        [self.glcm_unique_datetimes, self.ridges_unique_datetimes,
-                         self.flat_unique_datetimes])
+                self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
+                                                              self.flat_unique_datetimes])
 
-                if self.s0_filelist is not None:
-                    self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.s0_filelist)
-                else:
-                    self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist)
+                #if self.s0_filelist is not None:
+                #    self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.s0_filelist)
+                #else:
+                #    self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist)
         else:
             # Only s0 training
             self.matched_datetimes = self.get_matched_dt([self.ridges_unique_datetimes,
                                                           self.flat_unique_datetimes,
                                                           self.s0_unique_datetimes])
+
+        # Collect data for all matched date and times
+        for idt in self.matched_datetimes:
+            idate = idt.strftime('%Y%m%d')
+            itime = idt.strftime('%H%M')
+            idt_str = idt.strftime('%Y%m%dT%H%M%S')
+
+            dates_and_files[idt_str] = {}
+            dates_and_files[idt_str]['textures'] = [x for x in self.glcm_filelist if (idate in x and itime in x)][0]
+            dates_and_files[idt_str]['level'] = [x for x in self.flat_filelist if (idate in x and itime in x)][0]
+            dates_and_files[idt_str]['ridges'] = [x for x in self.ridges_filelist if (idate in x and itime in x)][0]
+
+            if self.defo_filelist is not None and self.defo_filelist != []:
+                dates_and_files[idt_str]['deformation'] = [x for x in self.defo_filelist
+                                                           if (idate in x.split('_')[-1] and itime in x.split('_')[-1])][0]
+            else:
+                dates_and_files[idt_str]['deformation'] = ''
+
+            if self.s0_filelist is not None and self.s0_filelist != []:
+                dates_and_files[idt_str]['s0'] = [x for x in self.s0_filelist if (idate in x and itime in x)][0]
+            else:
+                dates_and_files[idt_str]['s0'] = ''
+
+        self.dates_and_files = dates_and_files
+
+        # Collocate data
+        self.collocate_data()
 
     @staticmethod
     def get_unq_dt_from_files(file_list, name):
@@ -1500,7 +1524,10 @@ class deformedIceClassifier(dataReader):
         dts_str = []
         dts = []
         for ifile in file_list:
-            idt = re.findall(r'\d\d\d\d\d\d\d\d\w\d\d\d\d', ifile)[0]
+            if ifile.find('defo') > 0:
+                idt = re.findall(r'\d\d\d\d\d\d\d\d\w\d\d\d\d', ifile)[1]
+            else:
+                idt = re.findall(r'\d\d\d\d\d\d\d\d\w\d\d\d\d', ifile)[0]
             dts_str.append(idt)
 
         dts_str.sort()
@@ -1545,162 +1572,128 @@ class deformedIceClassifier(dataReader):
 
         return dt_matched
 
-    def collocate_data(self, *args):
+    def collocate_data(self):
         '''
         Collocate all data from file lists
         '''
 
-        # Flat ice GLCM features
-        d_flat = {}
+        for idt in self.dates_and_files.keys():
+            print(f'\nData collocation for {idt}\n')
+            #date_time = idt.strftime('%Y%m%dT%H%M')
 
-        # Ridged ice GLCM features
-        d_ridged = {}
+            # Resample data onto one grid
+            glcm_file = self.dates_and_files[idt]['textures']
+            ridge_file = self.dates_and_files[idt]['ridges']
+            flat_file = self.dates_and_files[idt]['level']
 
-        if self.defo_training:
-            # Add divergence and shear
-            d_flat.setdefault('div', [])
-            d_ridged.setdefault('div', [])
+            if self.defo_training:
+                defo_file = self.dates_and_files[idt]['deformation']
+            else:
+                defo_file = ''
 
-            d_flat.setdefault('shear', [])
-            d_ridged.setdefault('shear', [])
+            # Manual charts
+            print(f'\nInterpolating manual Ridge data \n{os.path.basename(ridge_file)} \nto '
+                  f'\n{os.path.basename(glcm_file)}...\n')
 
-        if self.s0_filelist is not None:
-            d_flat.setdefault('s0', [])
-            d_ridged.setdefault('s0', [])
+            r = Resampler(ridge_file, glcm_file)
 
-        if self.matched_datetimes:
-            for idt in self.matched_datetimes:
-                # print(f'\nData collocation for {idt}\n')
-                date_time = idt.strftime('%Y%m%dT%H%M')
+            data_int_ridge = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                        r.f_target['lats'],
+                                        r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
+            print(f'Done\n')
 
-                dt_files = []
+            print(f'\nInterpolating manual Flat data \n{os.path.basename(flat_file)} \nto '
+                  f'\n{os.path.basename(glcm_file)}...\n')
 
-                for x in args:
-                    for ifile in x:
-                        if date_time in ifile:
-                            dt_files.append(ifile)
+            r = Resampler(flat_file, glcm_file)
+            data_int_flat = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                       r.f_target['lats'],
+                                       r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
+            print(f'Done\n')
 
-                print('\nDone.\n')
-
-                print(f'Files for {idt}:\n {dt_files}\n Start collocation...')
-
-                # Resample data onto one grid
-                glcm_file = dt_files[0]
-                ridge_file = dt_files[1]
-                flat_file = dt_files[2]
-
-                if self.defo_training:
-                    defo_file = dt_files[3]
-                    if not self.s0_filelist is None:
-                        s0_file = dt_files[4]
-                else:
-                    if not self.s0_filelist is None:
-                        s0_file = dt_files[3]
-
-                # Interpolate sigma zero data
-                if self.s0_filelist is not None:
-                    print(f'\nInterpolating s0 data \n{s0_file} \nto \n{glcm_file}...\n')
-                    r = Resampler(s0_file, glcm_file)
-
-                    data_int_s0 = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
-                                             r.f_target['lats'], r.f_source['data']['s0'],
-                                             method='nearest', radius_of_influence=500000)
-                print(f'Done\n')
-
-                # Manual charts
-                print(f'\nInterpolating manual Ridge data \n{ridge_file} \nto \n{glcm_file}...\n')
-                r = Resampler(ridge_file, glcm_file)
-
-                data_int_ridge = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
-                                            r.f_target['lats'],
-                                            r.f_source['data']['s0'], method='gauss', radius_of_influence=500000)
-                print(f'Done\n')
-
-                print(f'\nInterpolating manual Flat data \n{flat_file} \nto \n{glcm_file}...\n')
-                r = Resampler(flat_file, glcm_file)
-                data_int_flat = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
-                                           r.f_target['lats'],
-                                           r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
-                print(f'Done\n')
-
-                if flat_file == ridge_file:
-                    print('\nWarning: Level ice file is the same as ridge file!\nInverting flat data...')
-                    data_int_flat[data_int_flat == 0] = -999
-                    data_int_flat[data_int_flat > 0] = 0
-                    data_int_flat[data_int_flat == -999] = 1
-                    print('Done.\n')
-                else:
-                    pass
-
-                if self.defo_training:
-                    #defo_file = dt_files[3]
-                    r = Resampler(defo_file, glcm_file)
-
-                    print(f'\nInterpolating Deformation data \n{defo_file} \nto \n{glcm_file}...\n')
-                    r = Resampler(defo_file, glcm_file)
-                    data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
-                                                r.f_target['lats'],
-                                                r.f_source['data']['ice_shear'],
-                                                method='nearest', radius_of_influence=5000)
-
-                    #r = Resampler(defo_file, glcm_file)
-                    data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
-                                              r.f_target['lats'], r.f_source['data']['ice_divergence'],
-                                              method='nearest', radius_of_influence=5000)
-                    print(f'Done\n')
-                else:
-                    defo_int_shear = None
-                    defo_int_div = None
-
-                ######################################################
-                # Collect training data
-                ######################################################
-
-                # Open data with texture features
-                print('\nReading netcdf file with texture features...\n')
-                data_glcm = self.read_nc(glcm_file)
-
-                # Get feature names
-                ft_names = [str(ft_name) for ft_name in range(len(data_glcm['data'].keys()))]
-                print(ft_names)
+            if flat_file == ridge_file:
+                print('\nWarning: Level ice file is the same as ridge file!\nInverting flat data...')
+                data_int_flat[data_int_flat == 0] = -999
+                data_int_flat[data_int_flat > 0] = 0
+                data_int_flat[data_int_flat == -999] = 1
                 print('Done.\n')
+            else:
+                pass
 
-                # Initialize matrix with training labels
-                training_labels = np.zeros(data_glcm['data'][ft_names[0]].shape, dtype=np.uint8)
-                training_labels[data_int_ridge > 0] = 2
-                training_labels[data_int_flat > 0] = 1
+            if self.defo_training:
+                #defo_file = dt_files[3]
+                r = Resampler(defo_file, glcm_file)
 
-                # Train labels
-                self.training_labels = training_labels
+                print(f'\nInterpolating Deformation data \n{defo_file} \nto \n{glcm_file}...\n')
+                r = Resampler(defo_file, glcm_file)
+                data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                            r.f_target['lats'],
+                                            r.f_source['data']['ice_shear'],
+                                            method='nearest', radius_of_influence=5000)
 
-                # Train features
-                if self.defo_training:
-                    z_dim = len(data_glcm['data'].keys()) + 2
-                else:
-                    z_dim = len(data_glcm['data'].keys())
+                data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                          r.f_target['lats'], r.f_source['data']['ice_divergence'],
+                                          method='nearest', radius_of_influence=5000)
+                print(f'Done\n')
+            else:
+                defo_int_shear = None
+                defo_int_div = None
 
-                print(z_dim, data_glcm['data'][ft_names[0]].shape[0], data_glcm['data'][ft_names[0]].shape[1])
+            ######################################################
+            # Collect training data
+            ######################################################
 
-                train_features = np.zeros((z_dim, data_glcm['data'][ft_names[0]].shape[0],
-                                           data_glcm['data'][ft_names[0]].shape[1]), dtype=np.float)
+            # Open data with texture features
+            print('\nReading netcdf file with texture features...\n')
+            data_glcm = self.read_nc(glcm_file)
 
-                for iz in range(z_dim):
-                    train_features[iz, :, :] = data_glcm['data'][ft_names[iz]]
+            # Get feature names
+            ft_names = [str(ft_name) for ft_name in range(len(data_glcm['data'].keys()))]
+            #print(ft_names)
+            print('Done.\n')
 
-                self.features = train_features
+            # Initialize matrix with training labels
+            training_labels = np.zeros(data_glcm['data'][ft_names[0]].shape, dtype=np.uint8)
 
-                # Add deformation data if defo training
-                if self.defo_training:
-                    self.features[z_dim, :, :] = data_int_div
-                    self.features[z_dim+1, :, :] = data_int_shear
-                else:
-                    pass
+            # Level ice
+            training_labels[data_int_flat > 0] = 1
 
-                # Replace nan values with 0
-                self.features[np.isnan(self.features)] = 0.
+            # Ridges
+            training_labels[data_int_ridge > 0] = 2
 
-                # Move axis
-                self.features = np.moveaxis(self.features, 0, 2)
+            # Train labels
+            self.training_labels = training_labels
+
+            # Train features
+            if self.defo_training:
+                z_dim = len(data_glcm['data'].keys()) + 2
+            else:
+                z_dim = len(data_glcm['data'].keys())
+
+            print(z_dim, data_glcm['data'][ft_names[0]].shape[0], data_glcm['data'][ft_names[0]].shape[1])
+
+            train_features = np.zeros((z_dim, data_glcm['data'][ft_names[0]].shape[0],
+                                       data_glcm['data'][ft_names[0]].shape[1]), dtype=np.float)
+
+            # Add texture features
+            for iz in range(len(ft_names)):
+                train_features[iz, :, :] = data_glcm['data'][ft_names[iz]]
+
+            # Add deformation features (shear, divergence)
+            # Add deformation data if defo training
+            if self.defo_training:
+                train_features[z_dim-2, :, :] = data_int_shear
+                train_features[z_dim-1, :, :] = data_int_div
+            else:
+                pass
+
+            self.features = train_features
+
+            # Replace nan values with 0
+            self.features[np.isnan(self.features)] = 0.
+
+            # Move axis
+            self.features = np.moveaxis(self.features, 0, 2)
 
     def train_rf_classifier(self, bbox=None, n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05):
         '''
@@ -1715,7 +1708,7 @@ class deformedIceClassifier(dataReader):
         print('Train labels shape: (%s %s)' % self.training_labels.shape)
         print('Features shape: (%s %s %s)' % self.features.shape)
 
-        if not bbox is None:
+        if bbox is not None:
             self.classifier = future.fit_segmenter(self.training_labels[bbox[0]:bbox[1], bbox[2]:bbox[3]],
                                                    self.features[bbox[0]:bbox[1], bbox[2]:bbox[3], :],
                                                    self.rf)
