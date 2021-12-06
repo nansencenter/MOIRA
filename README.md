@@ -1,11 +1,11 @@
 # MOIRA
 
-The package allows to perform classification of ridged and flat ice from SAR Sentinel-1 GRD Level-1 image based on texture characteristics and ice deformation data.
-There are two ways of classification - using ice deformation data along with SAR textures and using only SAR texture information. We reccomend to use the both data sources as a more robust way to overcome obstacles caused by the similar signature of ridged ice and young ice in leads but the deformation data is optional for the algorithm.
+The package allows performing detection of ridged and level ice from SAR Sentinel-1 GRD Level-1 image based on texture characteristics and ice deformation data.
+There are two ways of classification - using ice deformation data and SAR textures and only SAR texture information. We recommend using both data sources as a more robust way to overcome ambiguities caused by the similar signature of ridged ice and young ice in leads. But the deformation data is optional for the algorithm.
 
-The package also includes some tools that helps to prepare the data for classification. 
+The package also includes some tools that help prepare the data for the detection. 
 
-The following Quickstart guide covers all the essentials steps to perform sea ice ridge classification in step by step manner.
+The following Quickstart guide covers all the essential steps to perform sea ice ridge detection step-by-step.
 
 ## Quick start
 
@@ -171,9 +171,5 @@ Then the obtained result can be stored in NetCDF4 file:
 t.export_netcdf('PATH/TO/OUTPUT/NETCDF')
 ```
 
-
-
-
-
-
-
+The package was created as a part of MOdel for Sea Ice RAdar Image Microstructure (MOIRA)
+project for Europian Space Agency (ESA).
