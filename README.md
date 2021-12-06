@@ -102,12 +102,12 @@ https://drive.google.com/file/d/1_tPzNTzbGGKzytzMXWQuXcfAoAzaxOpc/view?usp=shari
 
 After you unpack the archive you can use them in the following script. Here is the folder structure:
 
-textures - SAR textures and edges calculated from Sentinel-1 image.
-ice_deformaition - contains ice divergence and shear in NetCDF4 format.
-level_ice - GeoTIFF file containing pixels with level ice flag.
-ridged_ice - GeoTIFF file containing pixels with ridged ice flag.
+```textures``` - SAR textures and edges calculated from Sentinel-1 image<br/>
+```ice_deformaition``` - contains ice divergence and shear in NetCDF4 format<br/>
+```level_ice``` - GeoTIFF file containing pixels with level ice flag<br/>
+```ridged_ice``` - GeoTIFF file containing pixels with ridged ice flag<br/>
 
-To start using the pacjage you need to change working directory or just copy ```ridge_classification.py``` to your local directory.
+To start using the package you need to change working directory or just copy ```ridge_classification.py``` to your local directory.
 
 ```python
 import matplotlib.pyplot as plt
@@ -165,7 +165,7 @@ fts = np.zeros((z_dim, data_textures['data'][ft_names[0]].shape[0],
 for iz in range(z_dim):
     fts[iz, :, :] = data_textures['data'][ft_names[iz]]
 
-# Open deformation data, interpolate on texture featires grid and add to the feature matrix
+# Open deformation data, interpolate onto texture features grid, add to the feature matrix
 f_defo = 'MOIRA_test_data/defromation/100px_ICEDEF_20201221t204819_20201222t203955.nc'
 r = Resampler(f_defo, 'MOIRA_test_data/textures/norm_s0_vv_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc')
 
@@ -177,18 +177,18 @@ data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['
                             r.f_target['lats'], r.f_source['data']['ice_shear'],
                             method='nearest', radius_of_influence=50000)
 
-# Add shear and div
+# Add shear and divergence
 fts_text_defo = np.dstack((fts, data_int_shear))
 fts_text_defo = np.dstack((fts_text_defo, data_int_div))
 
 # Replace NaN values with 0
 fts_text_defo[np.isnan(fts_text_defo)] = 0
 
-# Then we mask defromation values where have ice classifies as level (to harmonize deformation and texture data)
+# Then we mask deformation values over those pixels classified as level (to harmonize deformation and texture data)
 fts_text_defo[:,:,-1][res_no_defo<2] = 0
 fts_text_defo[:,:,-2][res_no_defo<2] = 0
 
-# Detect the deformation state of sea ice
+# Detect the deformation state of sea ice from texture and deformation features
 res_defo = clf_defo.detect_ice_state(fts_text_defo)
 
 # Plot obtained result (zoomed area)
@@ -196,7 +196,8 @@ res_defo = clf_defo.detect_ice_state(fts_text_defo)
 plt.imshow(res_defo[r1:r2,c1:c2], interpolation='nearest')
 ```
 
-![alt text](test_clf.png)
+![alt text](test/clf_no_defo.png)
+![alt text](test/clf_defo.png)
 
 
 
