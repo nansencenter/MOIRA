@@ -159,10 +159,10 @@ v.rasterize('PATH/TO/RASTERIZED/GEOTIFF/TIFE')
 
 ## 4. SAR texture calculation
 
-To calculate SAR texture characteristics which are GLCM features a method called `calcTexFt()` from `SarTextures` is used:
+calculate texture characteristics and edges from SAR data:
 
 ```python
-t.calcTexFt()
+t.getMultiscaleTextureFeatures()
 ```
 
 Then the obtained result can be stored in NetCDF4 file:
