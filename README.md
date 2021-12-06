@@ -16,7 +16,7 @@ https://drive.google.com/file/d/1_tPzNTzbGGKzytzMXWQuXcfAoAzaxOpc/view?usp=shari
 After you unpack the archive you can use them in the following script. Here is the folder structure:
 
 ```textures``` - SAR textures and edges calculated from Sentinel-1 image<br/>
-```ice_deformaition``` - contains ice divergence and shear in NetCDF4 format<br/>
+```ice_deformation``` - contains ice divergence and shear in NetCDF4 format<br/>
 ```level_ice``` - GeoTIFF file containing pixels with level ice flag<br/>
 ```ridged_ice``` - GeoTIFF file containing pixels with ridged ice flag<br/>
 
