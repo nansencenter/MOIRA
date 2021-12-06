@@ -1,15 +1,15 @@
 # MOIRA
 
 The package allows performing detection of ridged and level ice from SAR Sentinel-1 GRD Level-1 image based on texture characteristics and ice deformation data.
-There are two ways of classification - using ice deformation data and SAR textures and only SAR texture information. We recommend using both data sources as a more robust way to overcome ambiguities caused by the similar signature of ridged ice and young ice in leads. But the deformation data is optional for the algorithm.
+There are two ways to detect ice ridges and ridge clusters by the algorithm: using ice deformation data and SAR textures and only SAR texture information. We recommend using both data sources as a more robust way to overcome ambiguities caused by the similar signature of ridged ice and young ice in leads. But the deformation data is optional for the algorithm.
 
-The package also includes some tools that help prepare the data for the detection. 
+The package also includes tools that help to prepare the input data for the training and detection. 
 
 The following Quickstart guide covers all the essential steps to perform sea ice ridge detection step-by-step.
 
 ## Quick start
 
-For quick start tutorial you can download zipped test data set containing all data for ridged ice detection:
+For quick start tutorial you can download zipped test dataset containing data for ridged ice detection:
 
 https://drive.google.com/file/d/1_tPzNTzbGGKzytzMXWQuXcfAoAzaxOpc/view?usp=sharing
 
