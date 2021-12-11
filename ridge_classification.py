@@ -1,57 +1,30 @@
-from matplotlib.ticker import FormatStrFormatter
-from matplotlib import ticker
-from matplotlib.axis import Axis
-from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
-                               AutoMinorLocator)
-from mpl_toolkits.basemap import Basemap
-from matplotlib import colors
-
 from osgeo import gdal
 from osgeo import ogr
 from osgeo import osr
-from osgeo import gdalconst
-
 from netCDF4 import Dataset
-from math import pi, hypot, atan2, pi
-from numpy import cos, sin
 import numpy as np
 import os
-import random as random
-import scipy.stats as st
-import matplotlib
 import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy.spatial import cKDTree
-import pandas as pd
-import pyresample
-import math
 import pandas as pd
 from skimage import filters
 import time
 from multiprocessing import Pool
 import sys
 from skimage.feature import greycomatrix
-from skimage.transform import rescale
 import zipfile
 import shutil
 import xml.etree.ElementTree
 from scipy import interpolate, ndimage
 import glob
-import functools
 import pyresample
 from datetime import datetime
 import re
-from skimage.filters.rank import otsu
-from skimage.morphology import disk
 
 # Import train_test_split function
 from sklearn.model_selection import train_test_split
-#Import Random Forest Model
 from sklearn.ensemble import RandomForestClassifier
-#Import scikit-learn metrics module for accuracy calculation
 from sklearn import metrics
-from sklearn.impute import SimpleImputer
-from skimage import data, segmentation, feature, future
+from skimage import feature, future
 from functools import partial
 
 class SarImage:
@@ -613,10 +586,13 @@ class SarTextures(SarImage):
         # reshape matrix and make images to be on the first dimension
         return np.moveaxis(harImage, 2, 0)
 
-    def getMultiscaleTextureFeatures(self, iarray):
+    def getMultiscaleTextureFeatures(self, iarray, intensity=True,
+                                     edges=False, texture=True,
+                                     multichannel=False, method='gaussian',
+                                     sigma_min=1, sigma_max=16):
         ''' Local features for a single- or multi-channel nd image.
             Intensity, gradient intensity and local structure are computed at
-            different scales thanks to Gaussian blurring.
+            different scales thanks to Gaussian or anistotropic diffusion filtering.
 
         Parameters
         ----------
@@ -632,7 +608,7 @@ class SarTextures(SarImage):
                 If True, intensities of local gradients averaged over the different
                 scales are added to the feature set.
             texture : bool, default True
-                If True, eigenvalues of the Hessian matrix after Gaussian blurring
+                If True, eigenvalues of the Hessian matrix after Gaussian/Anisotropic diffusion filtering
                 at different scales are added to the feature set.
             sigma_min : float, optional
                 Smallest value of the Gaussian kernel used to average local
@@ -650,7 +626,14 @@ class SarTextures(SarImage):
                 If None, the image is assumed to be a grayscale (single channel) image.
                 Otherwise, this parameter indicates which axis of the array corresponds
                 to channels.
-                Returns
+            method: str, optional
+                ['gaussian', 'anis_diffusion']
+                if gaussian, the gaussian blurring is applied using sigma_min, sigma_max
+                and num_sigma.
+                if anis_diffusion, the gaussian anisotropic diffusion filtering is applied
+                where sigma_min, sigma_max corresponds to minimum and maximum
+                number of iterations.
+
         Returns
         -------
         features : np.ndarray(NUM_FT, NUM_ROWS, NUM_COLUMNS)
@@ -659,18 +642,16 @@ class SarTextures(SarImage):
             (i.e. ``n_features == n_features_singlechannel * n_channels``)
         '''
 
-        sigma_min = 1
-        sigma_max = 16
         features_func = partial(feature.multiscale_basic_features,
-                                intensity=True, edges=False, texture=True,
+                                intensity=intensity, edges=edges, texture=texture,
                                 sigma_min=sigma_min, sigma_max=sigma_max,
-                                multichannel=False)
+                                multichannel=multichannel, method=method)
 
         fts = features_func(iarray)
 
         return np.moveaxis(fts, 2, 0)
 
-    def calcTexFt(self, speckle_supression=True):
+    def calcTexFt(self, speckle_supression=True, type_features='multiscale'):
         '''
         Calculate GLCM features
         '''
@@ -701,19 +682,26 @@ class SarTextures(SarImage):
             self.normalizeInt(255)
 
         start = time.time()
-        print('\nStart GLCM computation...')
+        print('\nStart texture features computation...')
 
         for iband in self.norm_data.keys():
             print(f'{iband}\n')
             self.glcm_features[iband] = {}
 
             if speckle_supression:
-                print('\nSpeckle supression and calculating texture features...\n')
-                #texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
-                texFts = self.getMultiscaleTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
+                if type_features == 'multiscale':
+                    print('\nSpeckle supression and calculating MS texture features...\n')
+                    texFts = self.getMultiscaleTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
+                else:
+                    print('\nSpeckle supression and calculating Haralick texture features...\n')
+                    texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
             else:
-                print('\nCalculating texture features...\n')
-                texFts = self.getMultiscaleTextureFeatures(self.norm_data[iband])
+                if type_features == 'multiscale':
+                    print('\nCalculating MS texture features...\n')
+                    texFts = self.getMultiscaleTextureFeatures(self.norm_data[iband])
+                else:
+                    print('\nCalculating Haralick texture features...\n')
+                    texFts = self.getTextureFeatures(self.norm_data[iband])
 
             # Adding GLCM data
             '''
