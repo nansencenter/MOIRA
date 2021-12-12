@@ -593,10 +593,6 @@ class SarTextures(SarImage):
         # reshape matrix and make images to be on the first dimension
         return np.moveaxis(harImage, 2, 0)
 
-    ############################################
-    # START: Multiscale texture features block
-    ############################################
-
     def anisodiff(self, img, niter=25, kappa=50, gamma=0.25, step=(1., 1.), option=1):
         """
         Anisotropic diffusion.
@@ -691,17 +687,17 @@ class SarTextures(SarImage):
 
         return imgout
 
-    def _texture_filter(self, gaussian_filtered):
+    def _texture_filter(self, anisodiff_filtered):
         H_elems = [
-            np.gradient(np.gradient(gaussian_filtered)[ax0], axis=ax1)
-            for ax0, ax1 in combinations_with_replacement(range(gaussian_filtered.ndim), 2)
+            np.gradient(np.gradient(anisodiff_filtered)[ax0], axis=ax1)
+            for ax0, ax1 in combinations_with_replacement(range(anisodiff_filtered.ndim), 2)
         ]
         eigvals = feature.hessian_matrix_eigvals(H_elems)
         return eigvals
 
     def _singlescale_basic_features_singlechannel(self,
             img, niter, intensity=True, edges=False, texture=True
-    ):
+                                                  ):
         results = ()
         print('Anis. diffusion filtering...')
         anisodiff_filtered = self.anisodiff(img, niter=niter) #filters.gaussian(img, sigma, preserve_range=False)
@@ -723,34 +719,10 @@ class SarTextures(SarImage):
             iter_min=iter_min,
             iter_max=iter_max,
             iter_step=iter_step,
-            num_workers=None,
-    ):
+            num_workers=None
+                                                ):
         """Features for a single channel nd image.
-        Parameters
-        ----------
-        img : ndarray
-            Input image, which can be grayscale or multichannel.
-        intensity : bool, default True
-            If True, pixel intensities averaged over the different scales
-            are added to the feature set.
-        edges : bool, default True
-            If True, intensities of local gradients averaged over the different
-            scales are added to the feature set.
-        texture : bool, default True
-            If True, eigenvalues of the Hessian matrix after Gaussian blurring
-            at different scales are added to the feature set.
-        sigma_min : float, optional
-            Smallest value of the Gaussian kernel used to average local
-            neighbourhoods before extracting features.
-        sigma_max : float, optional
-            Largest value of the Gaussian kernel used to average local
-            neighbourhoods before extracting features.
-        num_sigma : int, optional
-            Number of values of the Gaussian kernel between sigma_min and sigma_max.
-            If None, sigma_min multiplied by powers of 2 are used.
-        num_workers : int or None, optional
-            The number of parallel threads to use. If set to ``None``, the full
-            set of available cores are used.
+
         Returns
         -------
         features : list
@@ -782,11 +754,13 @@ class SarTextures(SarImage):
             iter_step=iter_step,
             num_workers=None,
             *,
-            channel_axis=None,
-    ):
+            channel_axis=None
+                                  ):
         """Local features for a single- or multi-channel nd image.
         Intensity, gradient intensity and local structure are computed at
         different scales thanks to anisotropic diffusion filtering.
+        Modified from scikit-image code.
+
         Parameters
         ----------
         image : ndarray
@@ -852,10 +826,6 @@ class SarTextures(SarImage):
         features = list(itertools.chain.from_iterable(all_results))
         out = np.stack(features, axis=-1)
         return out
-
-    ############################################
-    # END: Multiscale texture features block
-    ############################################
 
     def getMultiscaleTextureFeatures(self, iarray, intensity=True,
                                      edges=False, texture=True,
