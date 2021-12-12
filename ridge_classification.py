@@ -20,12 +20,19 @@ import pyresample
 from datetime import datetime
 import re
 
-# Import train_test_split function
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn import metrics
 from skimage import feature, future
 from functools import partial
+
+from itertools import combinations_with_replacement
+import itertools
+import numpy as np
+from skimage import filters, feature
+from skimage.util.dtype import img_as_float32
+from skimage._shared import utils
+from concurrent.futures import ThreadPoolExecutor
 
 class SarImage:
     '''
@@ -586,10 +593,273 @@ class SarTextures(SarImage):
         # reshape matrix and make images to be on the first dimension
         return np.moveaxis(harImage, 2, 0)
 
+    ############################################
+    # START: Multiscale texture features block
+    ############################################
+
+    def anisodiff(self, img, niter=25, kappa=50, gamma=0.25, step=(1., 1.), option=1):
+        """
+        Anisotropic diffusion.
+
+        Usage:
+        imgout = anisodiff(im, niter, kappa, gamma, option)
+
+        Arguments:
+                img    - input image
+                niter  - number of iterations
+                kappa  - conduction coefficient 20-100 ?
+                gamma  - max value of .25 for stability
+                step   - tuple, the distance between adjacent pixels in (y,x)
+                option - 1 Perona Malik diffusion equation No 1
+                         2 Perona Malik diffusion equation No 2
+
+        Returns:
+                imgout   - diffused image.
+
+        kappa controls conduction as a function of gradient.  If kappa is low
+        small intensity gradients are able to block conduction and hence diffusion
+        across step edges.  A large value reduces the influence of intensity
+        gradients on conduction.
+
+        gamma controls speed of diffusion (you usually want it at a maximum of
+        0.25)
+
+        step is used to scale the gradients in case the spacing between adjacent
+        pixels differs in the x and y axes
+
+        Diffusion equation 1 favours high contrast edges over low contrast ones.
+        Diffusion equation 2 favours wide regions over smaller ones.
+
+        Reference:
+        P. Perona and J. Malik.
+        Scale-space and edge detection using ansotropic diffusion.
+        IEEE Transactions on Pattern Analysis and Machine Intelligence,
+        12(7):629-639, July 1990.
+
+        Original MATLAB code by Peter Kovesi
+        School of Computer Science & Software Engineering
+        The University of Western Australia
+        pk @ csse uwa edu au
+        <http://www.csse.uwa.edu.au>
+
+        Translated to Python and optimised by Alistair Muldal
+
+        Sep 2017 modified by Denis Demchev
+        """
+
+        if img.ndim == 3:
+            warnings.warn("Only grayscale images allowed, converting to 2D matrix")
+            img = img.mean(2)
+
+        # initialize output array
+        img = img.astype('float32')
+        imgout = img.copy()
+
+        # initialize some internal variables
+        deltaS = np.zeros_like(imgout)
+        deltaE = deltaS.copy()
+        NS = deltaS.copy()
+        EW = deltaS.copy()
+        gS = np.ones_like(imgout)
+        gE = gS.copy()
+
+        for ii in range(int(niter)):
+            # calculate the diffs
+            deltaS[:-1, :] = np.diff(imgout, axis=0)
+            deltaE[:, :-1] = np.diff(imgout, axis=1)
+
+            # conduction gradients (only need to compute one per dim!)
+            if option == 1:
+                gS = np.exp(-(deltaS / kappa) ** 2.) / step[0]
+                gE = np.exp(-(deltaE / kappa) ** 2.) / step[1]
+            elif option == 2:
+                gS = 1. / (1. + (deltaS / kappa) ** 2.) / step[0]
+                gE = 1. / (1. + (deltaE / kappa) ** 2.) / step[1]
+
+            # update matrices
+            E = gE * deltaE
+            S = gS * deltaS
+
+            # subtract a copy that has been shifted 'North/West' by one pixel
+            NS[:] = S
+            EW[:] = E
+            NS[1:, :] -= S[:-1, :]
+            EW[:, 1:] -= E[:, :-1]
+
+            # update the image
+            imgout += gamma * (NS + EW)
+
+        return imgout
+
+    def _texture_filter(self, gaussian_filtered):
+        H_elems = [
+            np.gradient(np.gradient(gaussian_filtered)[ax0], axis=ax1)
+            for ax0, ax1 in combinations_with_replacement(range(gaussian_filtered.ndim), 2)
+        ]
+        eigvals = feature.hessian_matrix_eigvals(H_elems)
+        return eigvals
+
+    def _singlescale_basic_features_singlechannel(self,
+            img, niter, intensity=True, edges=False, texture=True
+    ):
+        results = ()
+        print('Anis. diffusion filtering...')
+        anisodiff_filtered = self.anisodiff(img, niter=niter) #filters.gaussian(img, sigma, preserve_range=False)
+        print('Done!\n')
+
+        if intensity:
+            results += (anisodiff_filtered,)
+        if edges:
+            results += (filters.sobel(anisodiff_filtered),)
+        if texture:
+            results += (*self._texture_filter(anisodiff_filtered),)
+        return results
+
+    def _mutiscale_basic_features_singlechannel(self,
+            img,
+            intensity=True,
+            edges=True,
+            texture=True,
+            iter_min=iter_min,
+            iter_max=iter_max,
+            iter_step=iter_step,
+            num_workers=None,
+    ):
+        """Features for a single channel nd image.
+        Parameters
+        ----------
+        img : ndarray
+            Input image, which can be grayscale or multichannel.
+        intensity : bool, default True
+            If True, pixel intensities averaged over the different scales
+            are added to the feature set.
+        edges : bool, default True
+            If True, intensities of local gradients averaged over the different
+            scales are added to the feature set.
+        texture : bool, default True
+            If True, eigenvalues of the Hessian matrix after Gaussian blurring
+            at different scales are added to the feature set.
+        sigma_min : float, optional
+            Smallest value of the Gaussian kernel used to average local
+            neighbourhoods before extracting features.
+        sigma_max : float, optional
+            Largest value of the Gaussian kernel used to average local
+            neighbourhoods before extracting features.
+        num_sigma : int, optional
+            Number of values of the Gaussian kernel between sigma_min and sigma_max.
+            If None, sigma_min multiplied by powers of 2 are used.
+        num_workers : int or None, optional
+            The number of parallel threads to use. If set to ``None``, the full
+            set of available cores are used.
+        Returns
+        -------
+        features : list
+            List of features, each element of the list is an array of shape as img.
+        """
+        # computations are faster as float32
+        img = np.ascontiguousarray(img_as_float32(img))
+        iters = range(iter_min, iter_max, iter_step)
+
+        with ThreadPoolExecutor(max_workers=num_workers) as ex:
+            out_iters = list(
+                ex.map(
+                    lambda s: self._singlescale_basic_features_singlechannel(
+                        img, s, intensity=intensity, edges=edges, texture=texture
+                    ),
+                    iters,
+                )
+            )
+        features = itertools.chain.from_iterable(out_iters)
+        return features
+
+    def multiscale_basic_features(self,
+            image,
+            intensity=True,
+            edges=False,
+            texture=True,
+            iter_min=iter_min,
+            iter_max=iter_max,
+            iter_step=iter_step,
+            num_workers=None,
+            *,
+            channel_axis=None,
+    ):
+        """Local features for a single- or multi-channel nd image.
+        Intensity, gradient intensity and local structure are computed at
+        different scales thanks to anisotropic diffusion filtering.
+        Parameters
+        ----------
+        image : ndarray
+            Input image, which can be grayscale or multichannel.
+        multichannel : bool, default False
+            True if the last dimension corresponds to color channels.
+            This argument is deprecated: specify `channel_axis` instead.
+        intensity : bool, default True
+            If True, pixel intensities averaged over the different scales
+            are added to the feature set.
+        edges : bool, default True
+            If True, intensities of local gradients averaged over the different
+            scales are added to the feature set.
+        texture : bool, default True
+            If True, eigenvalues of the Hessian matrix after blurring
+            at different scales are added to the feature set.
+        iter_min : float, optional
+            Smallest value of iterations with anisotropic diffusion.
+        iter_max : float, optional
+            Largest value of iterations with anisotropic diffusion.
+        num_iter : int, optional
+            Number of values of the anistropic diffusion.
+            If None, 2 is used.
+        num_workers : int or None, optional
+            The number of parallel threads to use. If set to ``None``, the full
+            set of available cores are used.
+        channel_axis : int or None, optional
+            If None, the image is assumed to be a grayscale (single channel) image.
+            Otherwise, this parameter indicates which axis of the array corresponds
+            to channels.
+
+        Returns
+        -------
+        features : np.ndarray
+            Array of shape ``image.shape + (n_features,)``. When `channel_axis` is
+            not None, all channels are concatenated along the features dimension.
+            (i.e. ``n_features == n_features_singlechannel * n_channels``)
+        """
+        if not any([intensity, edges, texture]):
+            raise ValueError(
+                "At least one of `intensity`, `edges` or `textures`"
+                "must be True for features to be computed."
+            )
+        if channel_axis is None:
+            image = image[..., np.newaxis]
+            channel_axis = -1
+        elif channel_axis != -1:
+            image = np.moveaxis(image, channel_axis, -1)
+
+        all_results = (
+            self._mutiscale_basic_features_singlechannel(
+                image[..., dim],
+                intensity=intensity,
+                edges=edges,
+                texture=texture,
+                iter_min=iter_min,
+                iter_max=iter_max,
+                iter_step=iter_step,
+                num_workers=num_workers,
+            )
+            for dim in range(image.shape[-1])
+        )
+        features = list(itertools.chain.from_iterable(all_results))
+        out = np.stack(features, axis=-1)
+        return out
+
+    ############################################
+    # END: Multiscale texture features block
+    ############################################
+
     def getMultiscaleTextureFeatures(self, iarray, intensity=True,
                                      edges=False, texture=True,
-                                     multichannel=False, method='gaussian',
-                                     sigma_min=1, sigma_max=16):
+                                     iter_min=3, iter_max=20):
         ''' Local features for a single- or multi-channel nd image.
             Intensity, gradient intensity and local structure are computed at
             different scales thanks to Gaussian or anistotropic diffusion filtering.
@@ -642,10 +912,9 @@ class SarTextures(SarImage):
             (i.e. ``n_features == n_features_singlechannel * n_channels``)
         '''
 
-        features_func = partial(feature.multiscale_basic_features,
+        features_func = partial(self.multiscale_basic_features,
                                 intensity=intensity, edges=edges, texture=texture,
-                                sigma_min=sigma_min, sigma_max=sigma_max,
-                                multichannel=multichannel, method=method)
+                                iter_min=iter_min, iter_max=iter_max)
 
         fts = features_func(iarray)
 
