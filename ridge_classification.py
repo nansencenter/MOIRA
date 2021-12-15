@@ -593,7 +593,7 @@ class SarTextures(SarImage):
         # reshape matrix and make images to be on the first dimension
         return np.moveaxis(harImage, 2, 0)
 
-    def anisodiff(self, img, niter=25, kappa=50, gamma=0.25, step=(1., 1.), option=1):
+    def anisodiff(self, img, niter=20, kappa=50, gamma=0.25, step=(1., 1.), option=1):
         """
         Anisotropic diffusion.
 
@@ -699,9 +699,7 @@ class SarTextures(SarImage):
             img, niter, intensity=True, edges=False, texture=True
                                                   ):
         results = ()
-        print('Anis. diffusion filtering...')
-        anisodiff_filtered = self.anisodiff(img, niter=niter) #filters.gaussian(img, sigma, preserve_range=False)
-        print('Done!\n')
+        anisodiff_filtered = self.anisodiff(img, niter=niter)
 
         if intensity:
             results += (anisodiff_filtered,)
@@ -714,11 +712,11 @@ class SarTextures(SarImage):
     def _mutiscale_basic_features_singlechannel(self,
             img,
             intensity=True,
-            edges=True,
+            edges=False,
             texture=True,
-            iter_min=iter_min,
-            iter_max=iter_max,
-            iter_step=iter_step,
+            iter_min=1,
+            iter_max=20,
+            iter_step=2,
             num_workers=None
                                                 ):
         """Features for a single channel nd image.
@@ -749,9 +747,9 @@ class SarTextures(SarImage):
             intensity=True,
             edges=False,
             texture=True,
-            iter_min=iter_min,
-            iter_max=iter_max,
-            iter_step=iter_step,
+            iter_min=1,
+            iter_max=30,
+            iter_step=5,
             num_workers=None,
             *,
             channel_axis=None
@@ -829,7 +827,8 @@ class SarTextures(SarImage):
 
     def getMultiscaleTextureFeatures(self, iarray, intensity=True,
                                      edges=False, texture=True,
-                                     iter_min=3, iter_max=20):
+                                     iter_min=1, iter_max=20):
+
         ''' Local features for a single- or multi-channel nd image.
             Intensity, gradient intensity and local structure are computed at
             different scales thanks to Gaussian or anistotropic diffusion filtering.
@@ -1104,8 +1103,23 @@ class VectorData:
         transform = osr.CoordinateTransformation(sourceprj, targetprj)
 
         mem = ogr.GetDriverByName("ESRI Shapefile")
-        line_layer_reprojected = mem.CreateDataSource("temp.shp")
-        outlayer = line_layer_reprojected.CreateLayer('', targetprj, ogr.wkbLineString)
+
+        # Get the layer data type
+        # get the first feature
+        ft = line_layer.GetNextFeature()
+        geometry = ft.GetGeometryRef()
+        geom_type = geometry.GetGeometryName()
+
+        layer_reprojected = mem.CreateDataSource("temp.shp")
+
+        if geom_type == 'LINESTRING':
+            print(geom_type)
+            outlayer = layer_reprojected.CreateLayer('', targetprj, ogr.wkbLineString)
+        elif geom_type == 'POINT':
+            print(geom_type)
+            outlayer = layer_reprojected.CreateLayer('', targetprj, ogr.wkbPoint)
+        else:
+            raise ValueError(f'Error: {geom_type} is no supported!')
 
         for feature in line_layer:
             transformed = feature.GetGeometryRef()
@@ -1117,7 +1131,7 @@ class VectorData:
             outlayer.CreateFeature(feat)
             feat = None
 
-        del line_layer_reprojected
+        del layer_reprojected
 
         rasterized = gdal.Rasterize('MEM', 'temp.shp', format='MEM', outputBounds=[x_min, y_min, x_max, y_max],
                                     xRes=x_res, yRes=y_res, burnValues=[1])
