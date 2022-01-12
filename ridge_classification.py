@@ -169,8 +169,10 @@ class SarImage:
                 coefficients_rows.append(currentRow[0])
 
         print('interpolating data...')
+
         zoom_x = float(cols) / len(coefficients_rows[0])
         zoom_y = float(rows) / len(coefficients_rows)
+
         return ndimage.zoom(coefficients_rows, [zoom_y, zoom_x])
 
     def fill_nan(self, A):
@@ -194,13 +196,37 @@ class SarImage:
         measurement_file_array = np.array(measurement_file.GetRasterBand(1).ReadAsArray().astype(np.float32))
 
         radiometric_coefficients_array = self.get_coefficients_array(calibration_xml_path, 'calibrationVectorList',
-                                                                     backscatter_coeff, measurement_file.RasterXSize,
+                                                                     backscatter_coeff,
+                                                                     measurement_file.RasterXSize,
                                                                      measurement_file.RasterYSize)
         print('Radiometric calibration...')
         tiff_name = os.path.basename(input_tiff_path)
-        self.data[tiff_name] = (measurement_file_array * measurement_file_array) / (
-                    radiometric_coefficients_array * radiometric_coefficients_array)
+        self.data[tiff_name] = (measurement_file_array * measurement_file_array) / \
+                               (radiometric_coefficients_array * radiometric_coefficients_array)
+        print('Done.\n')
         # save_array_as_geotiff_gcp_mode(calibrated_array, output_tiff_path, measurement_file)
+
+    def noise_calibration(self, input_tiff_path, calibration_xml_path,
+                          noise_xml_path, backscatter_coeff='sigmaNought'):
+        measurement_file = gdal.Open(input_tiff_path)
+        measurement_file_array = np.array(measurement_file.GetRasterBand(1).ReadAsArray().astype(np.float32))
+
+        print('Radiometric calibration and thermal noise removal...')
+        radiometric_coefficients_array = self.get_coefficients_array(calibration_xml_path, 'calibrationVectorList',
+                                                                     backscatter_coeff,
+                                                                     measurement_file.RasterXSize,
+                                                                     measurement_file.RasterYSize)
+
+        noise_coefficients_array = self.get_coefficients_array(noise_xml_path, 'noiseRangeVectorList',
+                                                               'noiseRangeLut',
+                                                               measurement_file.RasterXSize,
+                                                               measurement_file.RasterYSize)
+
+        tiff_name = os.path.basename(input_tiff_path)
+        tmp_data = (measurement_file_array * measurement_file_array - noise_coefficients_array) / \
+                   (radiometric_coefficients_array * radiometric_coefficients_array)
+        tmp_data[tmp_data < 0] = 0.
+        self.data[tiff_name] = tmp_data
 
     def calibrate_project(self, t_srs, res, mask=False, write_file=True, out_path='.', backscatter_coeff='sigmaNought'):
         '''
@@ -228,17 +254,26 @@ class SarImage:
 
         for tiffPath in tiffPaths:
             print('Prcessing %s ...' % os.path.basename(tiffPath))
+
             # Find calibration and noise annotation files
             calib_f = glob.glob(
                 os.path.dirname(tiffPaths[0]).replace('measurement', 'annotation/calibration/*calibration*%s*.xml' %
-                                                      os.path.basename(tiffPaths[0]).split('.')[0]))[0]
+                                                      os.path.basename(tiffPath).split('.')[0]))[0]
             noise_f = \
             glob.glob(os.path.dirname(tiffPaths[0]).replace('measurement', 'annotation/calibration/*noise*%s*.xml' %
-                                                            os.path.basename(tiffPaths[0]).split('.')[0]))[0]
+                                                            os.path.basename(tiffPath).split('.')[0]))[0]
 
             if calib_f:
                 print('\nStart calibration...')
+                print('Calibration file: %s' % calib_f)
+                print('Noise file: %s' % noise_f)
+
+                # Radiometric calibration + denoise
+                #self.noise_calibration(tiffPath, calib_f, noise_f, backscatter_coeff)
+
+                # Radiometric calibration
                 self.radiometric_calibration(tiffPath, calib_f, backscatter_coeff)
+
                 print('Done.\n')
 
                 print('\nOpening raw Geotiff {}'.format(tiffPath))
@@ -269,6 +304,7 @@ class SarImage:
                 outdata.SetGCPs(new_gcp_list, target.ExportToWkt())
 
                 data = self.data[os.path.basename(tiffPath)]
+
                 arr_out = 10 * np.log10(data)
                 arr_out[np.isinf(arr_out)] = np.nan
 
@@ -1813,9 +1849,9 @@ class deformedIceClassifier(dataReader):
 
         return dt_matched
 
-    def collocate_data(self):
+    def collocate_data_matrixes(self):
         '''
-        Collocate all data from file lists
+        Collocate all data from file lists to matrix
         '''
 
         for idt in self.dates_and_files.keys():
@@ -1904,7 +1940,10 @@ class deformedIceClassifier(dataReader):
             training_labels[data_int_ridge > 0] = 2
 
             # Train labels
-            self.training_labels = training_labels
+            if not hasattr(self, 'training_labels'):
+                self.training_labels = training_labels
+            else:
+                self.training_labels = np.concatenate((self.training_labels, training_labels), 0)
 
             # Train features
             if self.defo_training:
@@ -1929,17 +1968,161 @@ class deformedIceClassifier(dataReader):
             else:
                 pass
 
-            self.features = train_features
-
             # Replace nan values with 0
-            self.features[np.isnan(self.features)] = 0.
+            train_features[np.isnan(train_features)] = 0.
 
             # Move axis
-            self.features = np.moveaxis(self.features, 0, 2)
+            train_features = np.moveaxis(train_features, 0, 2)
 
-    def train_rf_classifier(self, bbox=None, n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05):
+            if not hasattr(self, 'features'):
+                self.features = train_features
+            else:
+                self.features = np.concatenate((self.features, train_features), 0)
+
+    def collocate_data(self):
         '''
-        Train Random Forests classifier
+        Collocate all data from file lists into Pandas dataframe
+        '''
+
+        # Create dictonaries for all features
+        d_df = {}
+
+        idt = list(self.dates_and_files.keys())[0]
+        glcm_file = self.dates_and_files[idt]['textures']
+        data_glcm = self.read_nc(glcm_file)
+
+        # Get texture feature names
+        ft_names = [str(ft_name) for ft_name in range(len(data_glcm['data'].keys()))]
+
+        for ft_name in ft_names:
+            d_df.setdefault(ft_name, [])
+
+        if self.defo_training:
+            d_df.setdefault('div', [])
+            d_df.setdefault('shear', [])
+
+        d_df.setdefault('ice_class', [])
+        df = pd.DataFrame(d_df)
+
+        # Loop over all files for matched dates
+        #  [list(self.dates_and_files.keys())[0]]:
+        for idt in self.dates_and_files.keys():
+            print(f'\nData collocation for {idt}\n')
+
+            # Resample data onto common grid
+            glcm_file = self.dates_and_files[idt]['textures']
+            ridge_file = self.dates_and_files[idt]['ridges']
+            flat_file = self.dates_and_files[idt]['level']
+
+            if self.defo_training:
+                defo_file = self.dates_and_files[idt]['deformation']
+            else:
+                defo_file = ''
+
+            # Manual charts
+            print(f'\nInterpolating manual Ridge data \n{os.path.basename(ridge_file)} \nto '
+                  f'\n{os.path.basename(glcm_file)}...\n')
+
+            r = Resampler(ridge_file, glcm_file)
+
+            data_int_ridge = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                        r.f_target['lats'],
+                                        r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
+            print(f'Done\n')
+
+            print(f'\nInterpolating manual Flat data \n{os.path.basename(flat_file)} \nto '
+                  f'\n{os.path.basename(glcm_file)}...\n')
+
+            r = Resampler(flat_file, glcm_file)
+            data_int_flat = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                       r.f_target['lats'],
+                                       r.f_source['data']['s0'], method='nearest', radius_of_influence=500000)
+            print(f'Done\n')
+
+            if self.defo_training:
+                r = Resampler(defo_file, glcm_file)
+
+                print(f'\nInterpolating Deformation data \n{defo_file} \nto \n{glcm_file}...\n')
+                r = Resampler(defo_file, glcm_file)
+                data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                            r.f_target['lats'],
+                                            r.f_source['data']['ice_shear'],
+                                            method='nearest', radius_of_influence=5000)
+
+                data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                          r.f_target['lats'], r.f_source['data']['ice_divergence'],
+                                          method='nearest', radius_of_influence=5000)
+
+                print(f'Done\n')
+            else:
+                defo_int_shear = None
+                defo_int_div = None
+
+            ######################################################
+            # Collect training data
+            ######################################################
+
+            # Open data with texture features
+            print('\nReading netcdf file with texture features...\n')
+            data_glcm = self.read_nc(glcm_file)
+
+            # Get texture feature names
+            ft_names = [str(ft_name) for ft_name in range(len(data_glcm['data'].keys()))]
+            print('Done.\n')
+
+            d_flat = {}
+            d_ridged = {}
+
+            # Create dictonary keys with texture feature names
+            for ft_name in ft_names:
+                d_flat.setdefault(ft_name, [])
+                d_ridged.setdefault(ft_name, [])
+
+            for ft_name in ft_names:
+                ft = data_glcm['data'][ft_name][:]
+                d_flat[ft_name].extend(ft[data_int_flat > 0].ravel())
+                d_ridged[ft_name].extend(ft[data_int_ridge > 0].ravel())
+
+            # Create dictonary keys with texture deformation feature names
+            if self.defo_training:
+                # Add divergence and shear
+                d_flat.setdefault('div', [])
+                d_ridged.setdefault('div', [])
+                d_flat.setdefault('shear', [])
+                d_ridged.setdefault('shear', [])
+
+                d_flat['div'].extend(data_int_div[data_int_flat > 0].ravel())
+                d_flat['shear'].extend(data_int_shear[data_int_flat > 0].ravel())
+                d_ridged['div'].extend(data_int_div[data_int_ridge > 0].ravel())
+                d_ridged['shear'].extend(data_int_shear[data_int_ridge > 0].ravel())
+
+            if self.defo_training:
+                for ft_name in ft_names:
+                    d_df[ft_name] = list(d_ridged[ft_name]) + list(d_flat[ft_name])
+
+                d_df['div'] = list(d_ridged['div']) + list(d_flat['div'])
+                d_df['shear'] = list(d_ridged['shear']) + list(d_flat['shear'])
+
+                d_df['ice_class'] = [2 for i in range(len(d_ridged[ft_name]))] + \
+                                    [1 for i in range(len(d_flat[ft_name]))]
+
+            else:
+                for ft_name in ft_names:
+                    d_df[ft_name] = list(d_ridged[ft_name]) + list(d_flat[ft_name])
+
+                    d_df['ice_class'] = [2 for i in range(len(d_ridged[ft_name]))] + \
+                                        [1 for i in range(len(d_flat[ft_name]))]
+
+            df_i = pd.DataFrame(d_df)
+            df = pd.concat([df, df_i])
+
+        # Drop rows with zeroes for all features
+        self.features = df[np.count_nonzero(df.values[:, :-1], axis=1) > len(df.columns)-3]
+        print('Data collocation and extracting have done.\n')
+
+    def train_rf_classifier_matrix(self, bbox=None, n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05):
+        '''
+        Train Random Forests classifier from matrixes
         '''
 
         print('\nTrain Random-Forests classifier...\n')
@@ -1958,6 +2141,37 @@ class deformedIceClassifier(dataReader):
             self.classifier = future.fit_segmenter(self.training_labels, self.features, self.rf)
 
         print('Done.\n')
+
+    def train_rf_classifier(self, bbox=None, n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05):
+        '''
+        Train Random Forests classifier from Pandas dataframe
+        '''
+
+        print('\nTrain Random-Forests classifier...\n')
+
+        self.rf = RandomForestClassifier(n_estimators=n_estimators, n_jobs=n_jobs,
+                                         max_depth=max_depth, max_samples=max_samples)
+
+        X = self.features[list(self.features)[:-1]]  # Features
+        y = self.features['ice_class']  # Labels
+
+        # Split dataset into training set and test set
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)  # 70% training and XX% test
+
+        # Create a Gaussian Classifier
+        #clf = RandomForestClassifier(n_estimators=1000)
+
+        # Train the model using the training sets y_pred=clf.predict(X_test)
+        self.classifier = self.rf.fit(X_train, y_train)
+
+        print('Done.\n')
+
+        y_pred = self.classifier.predict(X_test)
+
+        # Model Accuracy, how often is the classifier correct?
+        print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
+
+        #########################
 
     def detect_ice_state(self, input_features):
         '''
