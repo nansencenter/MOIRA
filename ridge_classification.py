@@ -2010,7 +2010,7 @@ class deformedIceClassifier(dataReader):
 
         # Loop over all files for matched dates
         #  [list(self.dates_and_files.keys())[0]]:
-        for idt in [list(self.dates_and_files.keys())[0]]: #self.dates_and_files.keys():
+        for idt in self.dates_and_files.keys():
             print(f'\nData collocation for {idt}\n')
 
             # Resample data onto common grid
