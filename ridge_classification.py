@@ -1791,7 +1791,10 @@ class deformedIceClassifier(dataReader):
         self.dates_and_files = dates_and_files
 
         # Collocate data
-        self.collocate_data()
+        if len(self.dates_and_files.keys()) > 0:
+            self.collocate_data()
+        else:
+            pass
 
     @staticmethod
     def get_unq_dt_from_files(file_list, name):
@@ -2143,12 +2146,12 @@ class deformedIceClassifier(dataReader):
 
         print('Done.\n')
 
-    def train_rf_classifier(self, bbox=None, n_estimators=500, n_jobs=10, max_depth=10, max_samples=0.05):
+    def train_rf_classifier(self, bbox=None, n_estimators=100, n_jobs=10, max_depth=10, max_samples=0.05):
         '''
         Train Random Forests classifier from Pandas dataframe
         '''
 
-        print('\nTrain Random-Forests classifier...\n')
+        print('\nTrain Random-Forest classifier...\n')
 
         self.rf = RandomForestClassifier(n_estimators=n_estimators, n_jobs=n_jobs,
                                          max_depth=max_depth, max_samples=max_samples)
@@ -2159,18 +2162,12 @@ class deformedIceClassifier(dataReader):
         # Split dataset into training set and test set
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)  # 70% training and XX% test
 
-        # Create a Gaussian Classifier
-        #clf = RandomForestClassifier(n_estimators=1000)
-
-        # Train the model using the training sets y_pred=clf.predict(X_test)
+        # Train the model using the training sets
         self.classifier = self.rf.fit(X_train, y_train)
-
-        print('Done.\n')
-
         y_pred = self.classifier.predict(X_test)
 
         # Model Accuracy, how often is the classifier correct?
-        print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
+        print("Done with accuracy:\n", metrics.accuracy_score(y_test, y_pred))
 
     def save_model(self, file_path='./model.sav'):
         '''
