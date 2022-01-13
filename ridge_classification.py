@@ -2174,16 +2174,27 @@ class deformedIceClassifier(dataReader):
 
     def save_model(self, file_path='./model.sav'):
         '''
-        Save trained model
+        Save the trained model
         '''
 
-        # Check if a model exist
         if hasattr(self, 'classifier'):
-            # save the model to disk
             pickle.dump(self.classifier, open(file_path, 'wb'))
+            print(f'The model {file_path} has been succesefully saved.\n')
         else:
-            print(f'Error! Could not save a model {file_path}. Try to train a model first:\n'
-                  'your_object.train_rf_classifier().\n')
+            print(f'Error! Could not save a model {file_path}. Try to train a model first:\n '
+                  f'your_object.train_rf_classifier().\n')
+
+    def load_model(self, file_path='./model.sav'):
+        '''
+        Load a model from disc
+        '''
+
+        if os.path.isfile(file_path):
+            self.classifier = pickle.load(open(file_path, 'rb'))
+            print(f'\nThe model {file_path} has been succesefully loaded.\n')
+        else:
+            print(f'Error! A file with model does not exist.\n '
+                  f'Please check the file path: {file_path}\n')
 
     def detect_ice_state(self, input_features):
         '''
