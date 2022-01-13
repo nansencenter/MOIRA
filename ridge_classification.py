@@ -2251,12 +2251,12 @@ class deformedIceClassifier(dataReader):
 
                 # Summary plot 1
                 f = plt.figure()
-                shap.summary_plot(rf_shap_values, self.X_test, plot_type='bar')
+                shap.summary_plot(rf_shap_values, self.X_train, plot_type='bar')
                 f.savefig(f'{out_path}/summary_plot1.png', bbox_inches='tight', dpi=600)
 
                 # Summary plot 2 (positive/negative impact)
                 f = plt.figure()
-                shap.summary_plot(rf_shap_values[1], self.X_test)
+                shap.summary_plot(rf_shap_values[1], self.X_train)
                 f.savefig(f'{out_path}/summary_plot2.png', bbox_inches='tight', dpi=600)
             else:
                 print('\nError! Please check object attributes: classifier, X_train, X_test\n')
