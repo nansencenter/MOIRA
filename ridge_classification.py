@@ -1717,15 +1717,15 @@ class ridgedIceClassifier(dataReader):
         self.classified_data = classified_data
 
 ######################################################################
-# TODO: New class for classification based on multi-scale features
+# Classification based on multi-scale features
 ######################################################################
 class deformedIceClassifier(dataReader):
     '''
     Train and classify SAR image into two classes: ridged and level ice
     '''
 
-    def __init__(self, glcm_filelist, ridges_filelist, flat_filelist, defo_filelist,
-                 s0_filelist, defo_training=False):
+    def __init__(self, glcm_filelist=[], ridges_filelist=[], flat_filelist=[], defo_filelist=[],
+                 s0_filelist=[], defo_training=False):
 
         self.glcm_filelist = glcm_filelist
         self.ridges_filelist = ridges_filelist
@@ -2176,7 +2176,7 @@ class deformedIceClassifier(dataReader):
 
         if hasattr(self, 'classifier'):
             pickle.dump(self.classifier, open(file_path, 'wb'))
-            print(f'The model {file_path} has been succesefully saved.\n')
+            print(f'The model {file_path} has been successfully saved.\n')
         else:
             print(f'Error! Could not save a model {file_path}. Try to train a model first:\n '
                   f'your_object.train_rf_classifier().\n')
@@ -2188,7 +2188,7 @@ class deformedIceClassifier(dataReader):
 
         if os.path.isfile(file_path):
             self.classifier = pickle.load(open(file_path, 'rb'))
-            print(f'\nThe model {file_path} has been succesefully loaded.\n')
+            print(f'\nThe model {file_path} has been successfully loaded.\n')
         else:
             print(f'Error! A file with model does not exist.\n '
                   f'Please check the file path: {file_path}\n')
@@ -2207,3 +2207,23 @@ class deformedIceClassifier(dataReader):
         print('Done.\n')
 
         return result
+
+    def read_features_file(self, file_path):
+        '''
+        Open netCDF file containig features
+        '''
+
+        if os.path.isfile(file_path):
+            reader = dataReader()
+            data_glcm = reader.read_nc(file_path)
+            ft_names = [str(ft_name) for ft_name in range(len(data_glcm['data'].keys()))]
+            z_dim = len(ft_names)
+            fts = np.zeros((z_dim, data_glcm['data'][ft_names[0]].shape[0],
+                            data_glcm['data'][ft_names[0]].shape[1]), dtype=np.float)
+            for iz in range(z_dim):
+                fts[iz, :, :] = data_glcm['data'][ft_names[iz]]
+
+            print(f'Features successfully opened')
+            return np.moveaxis(fts, 0, 2)
+        else:
+            print(f'\nError! {file_path} does not exist\n')
