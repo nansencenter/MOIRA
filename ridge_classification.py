@@ -2010,7 +2010,7 @@ class deformedIceClassifier(dataReader):
 
         # Loop over all files for matched dates
         #  [list(self.dates_and_files.keys())[0]]:
-        for idt in self.dates_and_files.keys():
+        for idt in [list(self.dates_and_files.keys())[0]]: #self.dates_and_files.keys():
             print(f'\nData collocation for {idt}\n')
 
             # Resample data onto common grid
@@ -2162,6 +2162,11 @@ class deformedIceClassifier(dataReader):
         # Split dataset into training set and test set
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)  # 70% training and XX% test
 
+        self.X_train = X_train
+        self.X_test = X_test
+        self.y_train = y_train
+        self.y_test = y_test
+
         # Train the model using the training sets
         self.classifier = self.rf.fit(X_train, y_train)
         y_pred = self.classifier.predict(X_test)
@@ -2227,3 +2232,36 @@ class deformedIceClassifier(dataReader):
             return np.moveaxis(fts, 0, 2)
         else:
             print(f'\nError! {file_path} does not exist\n')
+
+    def plot_shap_importance(self, out_path):
+        '''
+        Produce the variable importance plots
+        '''
+
+        try:
+            import shap
+
+            if hasattr(self, 'classifier') and hasattr(self, 'X_train') and hasattr(self, 'X_test'):
+                print('\nCalculating SHAP values...\n')
+                explainer = shap.TreeExplainer(self.classifier)
+                rf_shap_values = explainer.shap_values(self.X_train)
+                #shap.TreeExplainer(self.classifier).shap_values(self.X_train)
+                print('Done\n')
+                self.rf_shap_values = rf_shap_values
+
+                # Summary plot 1
+                f = plt.figure()
+                shap.summary_plot(rf_shap_values, self.X_test, plot_type='bar')
+                f.savefig(f'{out_path}/summary_plot1.png', bbox_inches='tight', dpi=600)
+
+                # Summary plot 2 (positive/negative impact)
+                f = plt.figure()
+                shap.summary_plot(rf_shap_values[1], self.X_test)
+                f.savefig(f'{out_path}/summary_plot2.png', bbox_inches='tight', dpi=600)
+            else:
+                print('\nError! Please check object attributes: classifier, X_train, X_test\n')
+
+        except:
+            print('\nPlease install SHAP library to make this method available:\n'
+                  'pip install shap\n')
+
