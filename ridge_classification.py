@@ -33,6 +33,7 @@ from skimage import filters, feature
 from skimage.util.dtype import img_as_float32
 from skimage._shared import utils
 from concurrent.futures import ThreadPoolExecutor
+import pickle
 
 class SarImage:
     '''
@@ -2142,7 +2143,7 @@ class deformedIceClassifier(dataReader):
 
         print('Done.\n')
 
-    def train_rf_classifier(self, bbox=None, n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05):
+    def train_rf_classifier(self, bbox=None, n_estimators=500, n_jobs=10, max_depth=10, max_samples=0.05):
         '''
         Train Random Forests classifier from Pandas dataframe
         '''
@@ -2171,7 +2172,18 @@ class deformedIceClassifier(dataReader):
         # Model Accuracy, how often is the classifier correct?
         print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
 
-        #########################
+    def save_model(self, file_path='./model.sav'):
+        '''
+        Save trained model
+        '''
+
+        # Check if a model exist
+        if hasattr(self, 'classifier'):
+            # save the model to disk
+            pickle.dump(self.classifier, open(file_path, 'wb'))
+        else:
+            print(f'Error! Could not save a model {file_path}. Try to train a model first:\n'
+                  'your_object.train_rf_classifier().\n')
 
     def detect_ice_state(self, input_features):
         '''
