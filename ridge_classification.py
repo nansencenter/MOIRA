@@ -2120,8 +2120,9 @@ class deformedIceClassifier(dataReader):
             df_i = pd.DataFrame(d_df)
             df = pd.concat([df, df_i])
 
-        # Drop rows with zeroes for all features
+        # Drop rows with zeroes for all features and if there is a one NaN value at least
         self.features = df[np.count_nonzero(df.values[:, :-1], axis=1) > len(df.columns)-3]
+        self.features = df.dropna()
         print('Data collocation and extracting have done.\n')
 
     def train_rf_classifier_matrix(self, bbox=None, n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05):
@@ -2160,7 +2161,7 @@ class deformedIceClassifier(dataReader):
         y = self.features['ice_class']  # Labels
 
         # Split dataset into training set and test set
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)  # 70% training and XX% test
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=1)
 
         self.X_train = X_train
         self.X_test = X_test
@@ -2244,19 +2245,19 @@ class deformedIceClassifier(dataReader):
             if hasattr(self, 'classifier') and hasattr(self, 'X_train') and hasattr(self, 'X_test'):
                 print('\nCalculating SHAP values...\n')
                 explainer = shap.TreeExplainer(self.classifier)
-                rf_shap_values = explainer.shap_values(self.X_train)
-                #shap.TreeExplainer(self.classifier).shap_values(self.X_train)
+                rf_shap_values = explainer.shap_values(self.X_test)
                 print('Done\n')
+
                 self.rf_shap_values = rf_shap_values
 
                 # Summary plot 1
                 f = plt.figure()
-                shap.summary_plot(rf_shap_values, self.X_train, plot_type='bar')
+                shap.summary_plot(rf_shap_values, self.X_test, plot_type='bar')
                 f.savefig(f'{out_path}/summary_plot1.png', bbox_inches='tight', dpi=600)
 
                 # Summary plot 2 (positive/negative impact)
                 f = plt.figure()
-                shap.summary_plot(rf_shap_values[1], self.X_train)
+                shap.summary_plot(rf_shap_values[1], self.X_test)
                 f.savefig(f'{out_path}/summary_plot2.png', bbox_inches='tight', dpi=600)
             else:
                 print('\nError! Please check object attributes: classifier, X_train, X_test\n')
