@@ -1,62 +1,83 @@
 # MOIRA
 
-The package allows performing detection of ridged and level ice from SAR Sentinel-1 GRD Level-1 image based on texture characteristics and ice deformation data.
-There are two ways to detect ice ridges and ridge clusters by the algorithm: using ice deformation data and SAR textures and only SAR texture information. We recommend using both data sources as a more robust way to overcome ambiguities caused by the similar signature of ridged ice and young ice in leads. But the deformation data is optional for the algorithm.
+The package functionality includes deformation state detection from SAR Sentinel-1 GRD Level-1 images based on
+combined use of texture characteristics and ice deformation data.
+The use of ice deformation data is optional but efficiently complement SAR textures 
+for unambiguous distinguishing between ridged and level ice.
 
-The package also includes tools that help to prepare the input data for the training and detection. 
+The package also includes tools to prepare the input data for the training and detection. 
 
-The following Quickstart guide covers all the essential steps to perform sea ice ridge detection step-by-step.
+The test trained models for Sentinel-1 EW and IW data are also included in the package.
+
+The following Quickstart guide covers ridged ice detection example step-by-step.
 
 ## Quick start
 
-For quick start tutorial you can download zipped test dataset containing data for ridged ice detection:
+For quick start tutorial you can download a test Sentinel-1 image:
 
-https://drive.google.com/file/d/1_tPzNTzbGGKzytzMXWQuXcfAoAzaxOpc/view?usp=sharing
+https://drive.google.com/file/d/164js5XFyExW5tt9Ud7PgvOG5upKshK_U/view?usp=sharing
 
-After you unpack the archive you can use them in the following script. Here is the folder structure:
+The image provided by European Space Agency (ESA) © and has been downloaded from 
+Copernicus Open Access Hub (https://scihub.copernicus.eu/)
 
-```textures``` - SAR textures and edges calculated from Sentinel-1 image<br/>
-```ice_deformation``` - contains ice divergence and shear in NetCDF4 format<br/>
-```level_ice``` - GeoTIFF file containing pixels with level ice flag<br/>
-```ridged_ice``` - GeoTIFF file containing pixels with ridged ice flag<br/>
-
-To start using the package you need to change working directory or just copy ```ridge_classification.py``` to your local directory.
+To start using the package you need to change working directory or just copy ```ridge_classification.py``` 
+to your local directory or change directory to the package path.
 
 ```python
 import matplotlib.pyplot as plt
-import glob
+import os
 plt.rcParams['figure.dpi'] = 150
 from ridge_classification import *
 
-# Define paths to input data
-s0_filelist = []
-glcm_filelist = glob.glob('MOIRA_test_data/textures/norm_s0_vv_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_*.nc')
-level_filelist = glob.glob('MOIRA_test_data/level_ice/20201222T203955_level_*.tiff')
-ridges_filelist = glob.glob('MOIRA_test_data/ridged_ice/20201222T203955_ridges_*.tiff')
-defo_filelist = glob.glob('MOIRA_test_data/defromation/100px_ICEDEF_20201221t204819_20201222t203955*.nc')
+# 1. First, we calculate multiscale texture features from Sentinel-1 image
 
-# Initialize detection object (from textures)
-clf_no_defo = deformedIceClassifier(glcm_filelist, ridges_filelist, level_filelist,
-                                  defo_filelist, s0_filelist, defo_training=False)
+s1_file = 'S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F.zip'
 
-# Train classifier
-clf_no_defo.train_rf_classifier(n_estimators=200, n_jobs=10, max_depth=100, max_samples=0.2)
+# Define lat/lon bounding box
+lon1, lat1 = 149.7342, 75.3338
+lon2, lat2 = 153.0878, 75.4001
 
-# Open file with texture features for detection
-reader = dataReader()
-data_textures = reader.read_nc('MOIRA_test_data/textures/norm_s0_vv_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_*.nc')
-ft_names = [str(ft_name) for ft_name in range(len(data_textures['data'].keys()))]
-z_dim = len(ft_names)
-fts = np.zeros((z_dim, data_textures['data'][ft_names[0]].shape[0],
-                                           data_textures['data'][ft_names[0]].shape[1]), dtype=np.float)
-for iz in range(z_dim):
-    fts[iz, :, :] = data_textures['data'][ft_names[iz]]
+# Define projection EPSG number and pixel size in meter
+proj_epsg = 5940
+res = 20
 
-# Move axis with z-dimension 
-fts = np.moveaxis(fts, 0, 2)
+# Initialize SAR texture object
+t = SarTextures(s1_file, bbox=[lon1, lat1, lon2, lat2])
+# Calibrate and project data
+t.calibrate_project(proj_epsg, res, mask=False, write_file=True, out_path=out_path, backscatter_coeff='sigmaNought')
+# Calculate texture features
+t.calcTexFt()
+# Save texture features in netCDF4 format
+t.export_netcdf('textures_%s.nc' % 
+                (os.path.basename(t.name).split('.')[0]))
 
-# Detect the deformation state of sea ice
-res_no_defo = clf_no_defo.detect_ice_state(fts)
+# 2. Initialize a detection object based on only SAR textures and on SAR textures + ice defromation
+clf_textures = deformedIceClassifier()
+clf_textures_defo = deformedIceClassifier()
+
+# 3. Load the detection models
+# Load the detection model for Sentinel-1 IW VV data 
+clf_textures.load_model('/mnt/sverdrup-2/sat_auxdata/MOIRA/models/mod_text_IW_VV.sav')
+
+# Load the detection model for Sentinel-1 IW VV data 
+clf_textures_defo.load_model('/mnt/sverdrup-2/sat_auxdata/MOIRA/models/mod_text_defo_IW_VV.sav')
+
+# 4. Open file with texture features created at Step 1
+file_path = 'textures_norm_s0_vv_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc'
+fts = clf_textures.read_features_file(file_path)
+
+# 5. Perform detection from texture fetaures
+res_text = clf_textures.detect_ice_state(fts)
+
+# 6. Plot result
+# Bbox for visualization
+r1, r2, c1, c2  = 830, 1200, 1480, 1900
+plt.imshow(res_text[r1:r2, c1:c2], interpolation='nearest')
+plt.axis('off')
+
+
+
+
 
 # Plot obtained result (zoomed area)
 # Bbox for visualization
@@ -68,15 +89,6 @@ plt.imshow(res_no_defo[r1:r2,c1:c2], interpolation='nearest')
 clf_defo = deformedIceClassifier(glcm_filelist, ridges_filelist, level_filelist,
                                   defo_filelist, s0_filelist, defo_training=True)
 
-# Add files with texture features and deformation
-reader = dataReader()
-data_textures = reader.read_nc('MOIRA_test_data/textures/norm_s0_vv_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_*.nc')
-ft_names = [str(ft_name) for ft_name in range(len(data_textures['data'].keys()))]
-z_dim = len(ft_names)
-fts = np.zeros((z_dim, data_textures['data'][ft_names[0]].shape[0],
-                                           data_textures['data'][ft_names[0]].shape[1]), dtype=np.float)
-for iz in range(z_dim):
-    fts[iz, :, :] = data_textures['data'][ft_names[iz]]
 
 # Open deformation data, interpolate onto texture features grid, add to the feature matrix
 f_defo = 'MOIRA_test_data/defromation/100px_ICEDEF_20201221t204819_20201222t203955.nc'

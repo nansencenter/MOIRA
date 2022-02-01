@@ -166,7 +166,6 @@ class SarImage:
                     i += 1
 
                 currentRow = self.fill_nan(currentRow)
-
                 coefficients_rows.append(currentRow[0])
 
         print('interpolating data...')
@@ -209,6 +208,7 @@ class SarImage:
 
     def noise_calibration(self, input_tiff_path, calibration_xml_path,
                           noise_xml_path, backscatter_coeff='sigmaNought'):
+
         measurement_file = gdal.Open(input_tiff_path)
         measurement_file_array = np.array(measurement_file.GetRasterBand(1).ReadAsArray().astype(np.float32))
 
@@ -222,14 +222,16 @@ class SarImage:
                                                                'noiseRangeLut',
                                                                measurement_file.RasterXSize,
                                                                measurement_file.RasterYSize)
+        self.noise = noise_coefficients_array
 
         tiff_name = os.path.basename(input_tiff_path)
-        tmp_data = (measurement_file_array * measurement_file_array - noise_coefficients_array) / \
-                   (radiometric_coefficients_array * radiometric_coefficients_array)
+        tmp_data = (measurement_file_array ** 2 - noise_coefficients_array) / \
+                   (radiometric_coefficients_array ** 2)
         tmp_data[tmp_data < 0] = 0.
         self.data[tiff_name] = tmp_data
 
-    def calibrate_project(self, t_srs, res, mask=False, write_file=True, out_path='.', backscatter_coeff='sigmaNought'):
+    def calibrate_project(self, t_srs, res, mask=False, write_file=True, out_path='.', backscatter_coeff='sigmaNought',
+                          noise=False):
         '''
         Project raw S1 GeoTIFF file
         '''
@@ -254,7 +256,7 @@ class SarImage:
         print('\nPaths to tiff files: %s\n' % tiffPaths)
 
         for tiffPath in tiffPaths:
-            print('Prcessing %s ...' % os.path.basename(tiffPath))
+            print('Processing %s ...' % os.path.basename(tiffPath))
 
             # Find calibration and noise annotation files
             calib_f = glob.glob(
@@ -273,7 +275,10 @@ class SarImage:
                 #self.noise_calibration(tiffPath, calib_f, noise_f, backscatter_coeff)
 
                 # Radiometric calibration
-                self.radiometric_calibration(tiffPath, calib_f, backscatter_coeff)
+                if noise:
+                    self.noise_calibration(tiffPath, calib_f, noise_f, backscatter_coeff)
+                else:
+                    self.radiometric_calibration(tiffPath, calib_f, backscatter_coeff)
 
                 print('Done.\n')
 
@@ -766,6 +771,7 @@ class SarTextures(SarImage):
         # computations are faster as float32
         img = np.ascontiguousarray(img_as_float32(img))
         iters = range(iter_min, iter_max, iter_step)
+        print('\n###### ITERATIONS: %s ##########\n' % iters)
 
         with ThreadPoolExecutor(max_workers=num_workers) as ex:
             out_iters = list(
@@ -1744,22 +1750,17 @@ class deformedIceClassifier(dataReader):
         if self.s0_filelist is not None and self.s0_filelist != []:
             self.s0_unique_datetimes = self.get_unq_dt_from_files(self.s0_filelist, 'Sigma nought')
 
-        if self.defo_filelist is not None and self.defo_filelist != []:
+        #if self.defo_filelist is not None and self.defo_filelist != []:
+        if self.defo_training:
             self.defo_unique_datetimes = self.get_unq_dt_from_files(self.defo_filelist, 'Ice deformation')
 
         if glcm_filelist is not None:
-            if defo_training:
+            if self.defo_training:
                 self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
                                                               self.flat_unique_datetimes, self.defo_unique_datetimes])
-                #self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.defo_filelist)
             else:
                 self.matched_datetimes = self.get_matched_dt([self.glcm_unique_datetimes, self.ridges_unique_datetimes,
                                                               self.flat_unique_datetimes])
-
-                #if self.s0_filelist is not None:
-                #    self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist, self.s0_filelist)
-                #else:
-                #    self.collocate_data(self.glcm_filelist, self.ridges_filelist, self.flat_filelist)
         else:
             # Only s0 training
             self.matched_datetimes = self.get_matched_dt([self.ridges_unique_datetimes,
@@ -2214,7 +2215,7 @@ class deformedIceClassifier(dataReader):
 
         return result
 
-    def read_features_file(self, file_path):
+    def read_features_file(self, file_path, defo_path=None):
         '''
         Open netCDF file containig features
         '''
@@ -2229,8 +2230,28 @@ class deformedIceClassifier(dataReader):
             for iz in range(z_dim):
                 fts[iz, :, :] = data_glcm['data'][ft_names[iz]]
 
-            print(f'Features successfully opened')
+            print(f'A file with texture features successfully opened')
+
+            if defo_path is not None:
+                if os.path.isfile(defo_path):
+                    # Reproject deformation data onto texture features grid
+                    r = self.Resampler(defo_path, file_path)
+                    data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                              r.f_target['lats'], r.f_source['data']['ice_divergence'],
+                                              method='nearest', radius_of_influence=500000)
+                    data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
+                                                r.f_target['lats'], r.f_source['data']['ice_shear'],
+                                                method='nearest', radius_of_influence=50000)
+                    # Add shear and divergence
+                    fts = np.dstack((fts, data_int_shear))
+                    fts = np.dstack((fts, data_int_div))
+                    # Replace NaN values with 0
+                    fts[np.isnan(fts)] = 0
+            else:
+                print(f'\nError! {defo_path} does not exist\n')
+
             return np.moveaxis(fts, 0, 2)
+        
         else:
             print(f'\nError! {file_path} does not exist\n')
 
