@@ -2232,10 +2232,12 @@ class deformedIceClassifier(dataReader):
 
             print(f'A file with texture features successfully opened')
 
+            fts = np.moveaxis(fts, 0, 2)
+
             if defo_path is not None:
                 if os.path.isfile(defo_path):
                     # Reproject deformation data onto texture features grid
-                    r = self.Resampler(defo_path, file_path)
+                    r = Resampler(defo_path, file_path)
                     data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                               r.f_target['lats'], r.f_source['data']['ice_divergence'],
                                               method='nearest', radius_of_influence=500000)
@@ -2248,10 +2250,10 @@ class deformedIceClassifier(dataReader):
                     # Replace NaN values with 0
                     fts[np.isnan(fts)] = 0
             else:
-                print(f'\nError! {defo_path} does not exist\n')
+                pass
 
-            return np.moveaxis(fts, 0, 2)
-        
+            return fts
+
         else:
             print(f'\nError! {file_path} does not exist\n')
 
