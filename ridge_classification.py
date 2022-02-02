@@ -2210,6 +2210,7 @@ class deformedIceClassifier(dataReader):
         print(self.classifier)
 
         result = future.predict_segmenter(input_features, self.classifier)
+
         self.result = result
         print('Done.\n')
 
@@ -2244,9 +2245,9 @@ class deformedIceClassifier(dataReader):
                     data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
                                                 r.f_target['lats'], r.f_source['data']['ice_shear'],
                                                 method='nearest', radius_of_influence=50000)
-                    # Add shear and divergence
-                    fts = np.dstack((fts, data_int_shear))
+                    # Add divergence and shear
                     fts = np.dstack((fts, data_int_div))
+                    fts = np.dstack((fts, data_int_shear))
                     # Replace NaN values with 0
                     fts[np.isnan(fts)] = 0
             else:
