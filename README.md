@@ -154,7 +154,7 @@ v = VectorData('/PATH/TO/VECTOR/FILE', '/PATH/TO/GEOTIFF/FILE', downsample=True)
 
 ```
 
-We recommend to kepp `downsample` parameter equal `True` for the computational efficiency and consistency.
+We recommend to keep `downsample` parameter equal `True` for the computational efficiency and consistency.
 Now we rasterize it to the output file.
 
 ```python
@@ -162,7 +162,7 @@ v.rasterize('PATH/TO/RASTERIZED/GEOTIFF/TIFE')
 
 ```
 
-## 4. SAR texture calculation
+## 4. SAR textures calculation
 
 calculate texture characteristics and edges from SAR data:
 
