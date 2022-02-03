@@ -115,17 +115,21 @@ from ridge_classification import *
 Then a Sentinel-1 image can be initialized by `SarTextures` class
 
 ```python
-t = SarTextures(PATH/TO/S1/FILE, ws=11, stp=15, threads=10)
+t = SarTextures(PATH/TO/S1/FILE)
 ```
 
-where `PATH/TO/S1/FILE` is a path to Sentinel-1 GRD (EW/IW) Level-1 file; `ws` - windows size for texture features computation; `stp` - computational grid step size; `threads` - number of threads.
+where `PATH/TO/S1/FILE` is a path to Sentinel-1 GRD (EW/IW) Level-1 file; 
+You also can specify:
+`ws` - windows size for texture features computation; 
+`stp` - computational grid step size; 
+`threads` - number of threads.
 
 ## 2. Calibrate and project Sentinel-1 image
 
-Peform data calibration and projection onto Polar Stereographic projection (EPSG:5041) with a spatial resolution of `res` [meters].
+Peform data calibration and projection onto Polar Stereographic projection (EPSG:5041) with a spatial resolution of 50 [meters].
 
 ```python
-t.calibrate_project(5041, res, mask=False, write_file=False, out_path='/OUTPUT/DIRECTORY')	
+t.calibrate_project(5940, 50, mask=False, write_file=False, out_path='/OUTPUT/DIRECTORY')	
 ```
 
 other parameters includes: `write_file` - set to True if you want to export the calibrated data as a geotiff file; `out_path` - ouput directory to store a geotiff file. 
@@ -137,10 +141,21 @@ The classification require reference data for the training. The common way to pr
 ```python
 
 v = VectorData('/PATH/TO/VECTOR/FILE', t.ds[list(t.ds.keys())[0]], downsample=True)
+
 ```
 
 where `t.ds[list(t.ds.keys())[0]]` is a gdal object with a projected geotiff from a previous step and we also set a `downsample` parameter to True to make further computations more fast. 
 
+Or you can specify a path to GeoTIFF file as the second parameter:
+
+```python
+
+v = VectorData('/PATH/TO/VECTOR/FILE', '/PATH/TO/GEOTIFF/FILE', downsample=True)
+
+```
+
+We recommend to kepp `downsample` parameter equal `True` for the computational efficiency and consistency.
+Now we rasterize it to the output file.
 
 ```python
 v.rasterize('PATH/TO/RASTERIZED/GEOTIFF/TIFE')
@@ -152,7 +167,7 @@ v.rasterize('PATH/TO/RASTERIZED/GEOTIFF/TIFE')
 calculate texture characteristics and edges from SAR data:
 
 ```python
-t.getMultiscaleTextureFeatures()
+t.calcTexFt()
 ```
 
 Then the obtained result can be stored in NetCDF4 file:
@@ -160,6 +175,3 @@ Then the obtained result can be stored in NetCDF4 file:
 ```python
 t.export_netcdf('PATH/TO/OUTPUT/NETCDF')
 ```
-
-The package was created as a part of MOdel for Sea Ice RAdar Image Microstructure (MOIRA)
-project for Europian Space Agency (ESA).
