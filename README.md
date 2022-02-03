@@ -17,7 +17,7 @@ For quick start tutorial you can download a test Sentinel-1 image:
 
 https://drive.google.com/file/d/164js5XFyExW5tt9Ud7PgvOG5upKshK_U/view?usp=sharing
 
-and a file with ice deformation for the same data as the SAR image has been taken:
+and a file with ice deformation for the same date as for the SAR image acquisition:
 
 https://drive.google.com/file/d/1gnKJ-kIhsUyIpHtnhnFrn47AHFd0lPfX/view?usp=sharing
 
