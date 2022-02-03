@@ -102,7 +102,7 @@ ax[1].axis('off')
 
 ![alt text](examples/detection_comp.png)
 
-Below you will find how prepare and calculate your data for the processing.
+Below you will find some examples of the package basic functionality to prepare and process the input data.
 
 ## 1. Open Sentinel-1 image
 
