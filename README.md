@@ -25,7 +25,7 @@ The image provided by European Space Agency (ESA) © and has been downloaded fro
 Copernicus Open Access Hub (https://scihub.copernicus.eu/)
 
 To start using the package you need to change working directory or just copy ```ridge_classification.py``` 
-to your local directory or change directory to the package path.
+into your local directory.
 
 ```python
 import matplotlib.pyplot as plt
