@@ -17,6 +17,10 @@ For quick start tutorial you can download a test Sentinel-1 image:
 
 https://drive.google.com/file/d/164js5XFyExW5tt9Ud7PgvOG5upKshK_U/view?usp=sharing
 
+and a file with ice deformation for the same data as the SAR image has been taken:
+
+https://drive.google.com/file/d/1gnKJ-kIhsUyIpHtnhnFrn47AHFd0lPfX/view?usp=sharing
+
 The image provided by European Space Agency (ESA) © and has been downloaded from 
 Copernicus Open Access Hub (https://scihub.copernicus.eu/)
 
@@ -56,73 +60,47 @@ clf_textures = deformedIceClassifier()
 clf_textures_defo = deformedIceClassifier()
 
 # 3. Load the detection models
-# Load the detection model for Sentinel-1 IW VV data 
-clf_textures.load_model('/mnt/sverdrup-2/sat_auxdata/MOIRA/models/mod_text_IW_VV.sav')
+# Load the detection model (from textures) for Sentinel-1 IW VV data 
+clf_textures.load_model('models/mod_text_IW_VV.sav')
 
-# Load the detection model for Sentinel-1 IW VV data 
-clf_textures_defo.load_model('/mnt/sverdrup-2/sat_auxdata/MOIRA/models/mod_text_defo_IW_VV.sav')
+# Load the detection model (from textures + deformation) for Sentinel-1 IW VV data 
+clf_textures_defo.load_model('models/mod_text_defo_IW_VV.sav')
 
 # 4. Open file with texture features created at Step 1
-file_path = 'textures_norm_s0_vv_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc'
-fts = clf_textures.read_features_file(file_path)
+f_textures = 'textures_norm_s0_vv_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc'
+fts = clf_textures.read_features_file(f_textures)
 
-# 5. Perform detection from texture fetaures
+# 5. Perform detection from texture fetutures
 res_text = clf_textures.detect_ice_state(fts)
 
-# 6. Plot result
+# 6. Then we want to perform the detection using SAR textures + ice deformation data
+
+# Open texture features and deformation data
+f_defo = '100px_ICEDEF_20201221t204819_20201222t203955.nc'
+fts_defo = clf_textures.read_features_file(f_textures, f_defo)
+
+# Mask deformation data (the last two features) over areas classified as level ice
+fts_defo[:,:,-1][res_text<2] = 0
+fts_defo[:,:,-2][res_text<2] = 0
+
+# Perform the detection
+res_text_defo = clf_textures_defo.detect_ice_state(fts_defo)
+
+# 7. Plot and compare results
 # Bbox for visualization
 r1, r2, c1, c2  = 830, 1200, 1480, 1900
-plt.imshow(res_text[r1:r2, c1:c2], interpolation='nearest')
-plt.axis('off')
 
+fig, ax = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(9, 4))
 
-
-
-
-# Plot obtained result (zoomed area)
-# Bbox for visualization
-r1, r2, c1, c2  = 810, 1200, 1410, 1900
-
-plt.imshow(res_no_defo[r1:r2,c1:c2], interpolation='nearest')
-
-# Next we perform ridge detection with deformation data
-clf_defo = deformedIceClassifier(glcm_filelist, ridges_filelist, level_filelist,
-                                  defo_filelist, s0_filelist, defo_training=True)
-
-
-# Open deformation data, interpolate onto texture features grid, add to the feature matrix
-f_defo = 'MOIRA_test_data/defromation/100px_ICEDEF_20201221t204819_20201222t203955.nc'
-r = Resampler(f_defo, 'MOIRA_test_data/textures/norm_s0_vv_S1B_IW_GRDH_1SDV_20201222T203955_20201222T204024_024820_02F3F4_625F_out.nc')
-
-data_int_div = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'],
-                          r.f_target['lats'], r.f_source['data']['ice_divergence'],
-                          method='nearest', radius_of_influence=500000)
-
-data_int_shear = r.resample(r.f_source['lons'], r.f_source['lats'], r.f_target['lons'], 
-                            r.f_target['lats'], r.f_source['data']['ice_shear'],
-                            method='nearest', radius_of_influence=50000)
-
-# Add shear and divergence
-fts_text_defo = np.dstack((fts, data_int_shear))
-fts_text_defo = np.dstack((fts_text_defo, data_int_div))
-
-# Replace NaN values with 0
-fts_text_defo[np.isnan(fts_text_defo)] = 0
-
-# Then we mask deformation values over those pixels classified as level (to harmonize deformation and texture data)
-fts_text_defo[:,:,-1][res_no_defo<2] = 0
-fts_text_defo[:,:,-2][res_no_defo<2] = 0
-
-# Detect the deformation state of sea ice from texture and deformation features
-res_defo = clf_defo.detect_ice_state(fts_text_defo)
-
-# Plot obtained result (zoomed area)
-# Bbox for visualization
-plt.imshow(res_defo[r1:r2,c1:c2], interpolation='nearest')
+ax[0].imshow(res_text[r1:r2, c1:c2], interpolation='nearest')
+ax[0].set_title('Detection (textures)')
+ax[1].imshow(res_text_defo[r1:r2, c1:c2], interpolation='nearest')
+ax[1].set_title('Detection (textures+deformation)')
+ax[0].axis('off')
+ax[1].axis('off')
 ```
 
-![alt text](test/clf_no_defo.png)
-![alt text](test/clf_defo.png)
+![alt text](examples/detection_comp.png)
 
 Below you will find how prepare and calculate your data for the processing.
 

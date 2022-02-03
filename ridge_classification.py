@@ -2209,7 +2209,7 @@ class deformedIceClassifier(dataReader):
         print('Input features shape: (%s %s %s)' % input_features.shape)
         print(self.classifier)
 
-        result = future.predict_segmenter(input_features, self.classifier)
+        result = future.predict_segmenter(input_features[:,:,], self.classifier)
 
         self.result = result
         print('Done.\n')
