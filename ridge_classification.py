@@ -2123,7 +2123,7 @@ class deformedIceClassifier(dataReader):
 
         # Drop rows with zeroes for all features and if there is a one NaN value at least
         self.features = df[np.count_nonzero(df.values[:, :-1], axis=1) > len(df.columns)-3]
-        self.features = df.dropna()
+        self.features.dropna()
         print('Data collocation and extracting have done.\n')
 
     def train_rf_classifier_matrix(self, bbox=None, n_estimators=50, n_jobs=10, max_depth=10, max_samples=0.05):
