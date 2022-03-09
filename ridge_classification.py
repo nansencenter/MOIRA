@@ -35,6 +35,9 @@ from skimage._shared import utils
 from concurrent.futures import ThreadPoolExecutor
 import pickle
 
+from skimage.filters.rank import entropy
+from skimage.morphology import disk
+
 class SarImage:
     '''
     Basic S1 L1 GRD image processing
@@ -932,6 +935,38 @@ class SarTextures(SarImage):
 
         return np.moveaxis(fts, 2, 0)
 
+    def getEntropy(self, iarray, radius=11):
+
+        ''' Compute Entropy that is the log-base-2 of the number of possible outcomes for a message.
+
+        Parameters
+        ----------
+            iarray : ndarray
+                2D input data with gray levels
+            radius: int
+                Radius of Entropy calculation
+
+        Returns
+        -------
+        fts : np.ndarray(NUM_FT, NUM_ROWS, NUM_COLUMNS)
+            Array of shape ``image.shape + (n_features,)``. When `channel_axis` is
+            not None, all channels are concatenated along the features dimension.
+            (i.e. ``n_features == n_features_singlechannel * n_channels``)
+        '''
+
+        from_min = np.nanmin(iarray)
+        from_max = np.nanmax(iarray)
+        to_max = 1
+        to_min = 0.
+
+        new_arr = (iarray - from_min) * (to_max - to_min) / (from_max - from_min) + to_min
+
+        fts = entropy(new_arr, disk(radius))
+
+        fts = fts[np.newaxis, :, :]
+
+        return fts
+
     def calcTexFt(self, speckle_supression=True, type_features='multiscale'):
         '''
         Calculate GLCM features
@@ -973,16 +1008,26 @@ class SarTextures(SarImage):
                 if type_features == 'multiscale':
                     print('\nSpeckle supression and calculating MS texture features...\n')
                     texFts = self.getMultiscaleTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
-                else:
+                elif type_features == 'harallick':
                     print('\nSpeckle supression and calculating Haralick texture features...\n')
                     texFts = self.getTextureFeatures(filters.median(self.norm_data[iband], np.ones((3, 3))))
+                elif type_features == 'entropy':
+                    print('\nSpeckle supression and calculating Entropy...\n')
+                    texFts = self.getEntropy(filters.median(self.norm_data[iband], np.ones((3, 3))))
+                else:
+                    print('The feature type is unknown.')
             else:
                 if type_features == 'multiscale':
                     print('\nCalculating MS texture features...\n')
                     texFts = self.getMultiscaleTextureFeatures(self.norm_data[iband])
-                else:
+                elif type_features == 'harallick':
                     print('\nCalculating Haralick texture features...\n')
                     texFts = self.getTextureFeatures(self.norm_data[iband])
+                elif type_features == 'entropy':
+                    print('\nSpeckle supression and calculating Entropy...\n')
+                    texFts = self.getEntropy(self.norm_data[iband])
+                else:
+                    print('The feature type is unknown.')
 
             # Adding GLCM data
             '''
